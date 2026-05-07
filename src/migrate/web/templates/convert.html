@@ -1,59 +1,171 @@
 {% extends "base.html" %}
 {% block title %}Convert · migrate{% endblock %}
 {% block content %}
-<div class="mb-6">
-  <h1 class="text-2xl font-semibold text-slate-100">Convert</h1>
-  <p class="text-slate-400 mt-1 text-sm">
-    Transpile BigQuery SQL → Databricks SQL via sqlglot, fall back to Claude when needed,
-    generate Delta DDL, and render a notebook from the standard template.
-    Artifacts go to <code class="text-accent-500">.migrate/conversions/</code>.
-  </p>
+<div class="mb-6 flex items-start justify-between">
+  <div>
+    <h1 class="text-2xl font-semibold text-slate-100">Convert</h1>
+    <p class="text-slate-400 mt-1 text-sm">
+      AI-driven conversion of code artifacts (DAGs, notebooks) to the target platform.
+      Tables are inventoried for lineage but not migrated as data.
+    </p>
+  </div>
+  <div class="flex items-center gap-2">
+    <span class="text-xs text-slate-500 uppercase tracking-wider">target</span>
+    <span class="px-3 py-1 rounded-full text-sm font-semibold
+                 {% if target_platform == 'databricks' %}bg-orange-950/40 border border-orange-800/40 text-orange-300{% else %}bg-amber-950/40 border border-amber-800/40 text-amber-300{% endif %}">
+      {{ target_platform }}
+    </span>
+    <a href="/connections" class="text-xs text-slate-500 hover:text-accent-500">change in .env</a>
+  </div>
+</div>
+
+<!-- Kind picker tabs -->
+<div class="border-b border-ink-700 mb-4 flex gap-4 text-sm">
+  {% set kinds = [
+    ('dag',      '🟩', 'DAGs',      inv.dags|length if inv else 0),
+    ('notebook', '📓', 'Notebooks', inv.notebooks|length if inv else 0),
+    ('table',    '🔷', 'Tables (legacy SQL)', inv.tables|length if inv else 0),
+  ] %}
+  {% for k, icon, label, count in kinds %}
+    <a href="/convert?kind={{ k }}"
+       class="py-2 border-b-2 transition-colors
+              {% if kind == k %}border-accent-500 text-accent-500{% else %}border-transparent text-slate-400 hover:text-slate-200{% endif %}">
+      {{ icon }} {{ label }} <span class="text-xs text-slate-500">({{ count }})</span>
+    </a>
+  {% endfor %}
 </div>
 
 <div class="bg-ink-900 border border-ink-700 rounded-lg p-5 mb-6">
-  <h2 class="font-semibold text-slate-200 mb-3">Convert a table</h2>
   {% if not inv %}
     <p class="text-sm text-slate-400">Run a <a href="/inventory" class="text-accent-500 hover:underline">scan</a> first.</p>
+
+  {% elif kind == "dag" %}
+    {% if not inv.dags %}
+      <p class="text-sm text-slate-400">No DAGs in inventory. Configure <code>GCP_COMPOSER_DAG_BUCKET</code> in <code>.env</code> and rescan.</p>
+    {% else %}
+    <h2 class="font-semibold text-slate-200 mb-3">Convert an Airflow DAG → {{ target_platform }}</h2>
+    <form hx-post="/convert/code" hx-target="#conv-result" hx-swap="innerHTML" hx-indicator="#conv-indicator"
+          class="space-y-3">
+      <input type="hidden" name="kind" value="dag" />
+      <div>
+        <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">DAG</label>
+        <select name="name" class="w-full bg-ink-800 border border-ink-700 rounded px-3 py-2 text-sm">
+          {% for d in inv.dags %}
+            <option value="{{ d.name }}">{{ d.name }} · schedule: {{ d.schedule or '—' }} · {{ d.tasks|length }} task(s)</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">
+          Custom prompt <span class="text-slate-600 font-normal">(optional — extra instructions for the LLM)</span>
+        </label>
+        <textarea name="prompt" rows="3"
+                  placeholder="e.g.: 'Use Asset Bundles syntax with one job per task.' or 'Replace EmailOperator with Slack webhooks.'"
+                  class="w-full bg-ink-800 border border-ink-700 rounded px-3 py-2 text-sm font-mono"></textarea>
+      </div>
+      <div class="flex items-center gap-3">
+        <select name="target" class="bg-ink-800 border border-ink-700 rounded px-3 py-2 text-sm">
+          <option value="">Use TARGET_PLATFORM ({{ target_platform }})</option>
+          <option value="databricks">Force: databricks</option>
+          <option value="aws">Force: aws (MWAA)</option>
+        </select>
+        <button class="px-4 py-2 text-sm rounded bg-accent-600 hover:bg-accent-700 text-ink-950 font-medium">Convert DAG</button>
+        <span id="conv-indicator" class="htmx-indicator text-xs text-accent-500">Calling Claude…</span>
+      </div>
+    </form>
+    {% endif %}
+
+  {% elif kind == "notebook" %}
+    {% if not inv.notebooks %}
+      <p class="text-sm text-slate-400">No notebooks in inventory. Configure <code>GCP_NOTEBOOKS_BUCKET</code> in <code>.env</code> and rescan.</p>
+    {% else %}
+    <h2 class="font-semibold text-slate-200 mb-3">Convert a notebook → {{ target_platform }}</h2>
+    <form hx-post="/convert/code" hx-target="#conv-result" hx-swap="innerHTML" hx-indicator="#conv-indicator"
+          class="space-y-3">
+      <input type="hidden" name="kind" value="notebook" />
+      <div>
+        <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">Notebook</label>
+        <select name="name" class="w-full bg-ink-800 border border-ink-700 rounded px-3 py-2 text-sm">
+          {% for n in inv.notebooks %}
+            <option value="{{ n.name }}">{{ n.name }} · {{ n.kind }} · {{ n.cells|length }} cell(s)</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">
+          Custom prompt <span class="text-slate-600 font-normal">(optional)</span>
+        </label>
+        <textarea name="prompt" rows="3"
+                  placeholder="e.g.: 'Use Delta Live Tables for any pandas_gbq.to_gbq calls.' or 'Keep the markdown cells in Portuguese.'"
+                  class="w-full bg-ink-800 border border-ink-700 rounded px-3 py-2 text-sm font-mono"></textarea>
+      </div>
+      <div class="flex items-center gap-3">
+        <select name="target" class="bg-ink-800 border border-ink-700 rounded px-3 py-2 text-sm">
+          <option value="">Use TARGET_PLATFORM ({{ target_platform }})</option>
+          <option value="databricks">Force: databricks</option>
+          <option value="aws">Force: aws (EMR/Glue)</option>
+        </select>
+        <button class="px-4 py-2 text-sm rounded bg-accent-600 hover:bg-accent-700 text-ink-950 font-medium">Convert notebook</button>
+        <span id="conv-indicator" class="htmx-indicator text-xs text-accent-500">Calling Claude…</span>
+      </div>
+    </form>
+    {% endif %}
+
   {% else %}
-  <form hx-post="/convert/run" hx-target="#conv-result" hx-swap="innerHTML" hx-indicator="#conv-indicator"
-        class="grid grid-cols-12 gap-3 items-end">
-    <div class="col-span-7">
-      <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">Source object (BQ FQN)</label>
-      <select name="fqn" class="w-full bg-ink-800 border border-ink-700 rounded px-3 py-2 text-sm">
-        {% for t in inv.tables %}
-          <option value="{{ t.fqn }}" {% if t.fqn in selected %}selected{% endif %}>{{ t.fqn }} ({{ t.type }})</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="col-span-3">
-      <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">LLM fallback</label>
-      <label class="flex items-center gap-2 px-3 py-2 bg-ink-800 border border-ink-700 rounded text-sm">
-        <input type="checkbox" name="use_llm" value="1" checked class="accent-accent-500" />
-        Enable Claude when sqlglot fails
-      </label>
-    </div>
-    <div class="col-span-2 flex items-center gap-2">
-      <button class="px-4 py-2 text-sm rounded bg-accent-600 hover:bg-accent-700 text-ink-950 font-medium w-full">Convert</button>
-      <span id="conv-indicator" class="htmx-indicator text-xs text-accent-500">…</span>
-    </div>
-  </form>
+    {# legacy table flow — sqlglot SQL conversion (kept for reference, no longer the focus) #}
+    <h2 class="font-semibold text-slate-200 mb-1">Convert a table SQL <span class="text-xs text-slate-500 font-normal">(legacy — informational only)</span></h2>
+    <p class="text-xs text-slate-500 mb-3">Tables are no longer migrated as data — this only generates the SQL/notebook artifact for reference. Real migration is via DAGs/notebooks above.</p>
+    <form hx-post="/convert/run" hx-target="#conv-result" hx-swap="innerHTML" hx-indicator="#conv-indicator"
+          class="grid grid-cols-12 gap-3 items-end">
+      <div class="col-span-7">
+        <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">Source table</label>
+        <select name="fqn" class="w-full bg-ink-800 border border-ink-700 rounded px-3 py-2 text-sm">
+          {% for t in inv.tables %}<option value="{{ t.fqn }}">{{ t.fqn }} ({{ t.type }})</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-span-3">
+        <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">LLM fallback</label>
+        <label class="flex items-center gap-2 px-3 py-2 bg-ink-800 border border-ink-700 rounded text-sm">
+          <input type="checkbox" name="use_llm" value="1" checked class="accent-accent-500" />
+          Enable Claude
+        </label>
+      </div>
+      <div class="col-span-2">
+        <button class="px-4 py-2 text-sm rounded bg-accent-600 hover:bg-accent-700 text-ink-950 font-medium w-full">Convert</button>
+        <span id="conv-indicator" class="htmx-indicator text-xs text-accent-500">…</span>
+      </div>
+    </form>
   {% endif %}
 </div>
 
 <div id="conv-result"></div>
 
+{# Past conversions split by kind #}
+{% if kind == "dag" %}
+  {% set existing = dag_conversions %}
+{% elif kind == "notebook" %}
+  {% set existing = notebook_conversions %}
+{% else %}
+  {% set existing = table_conversions %}
+{% endif %}
+
 {% if existing %}
 <div class="mt-8 bg-ink-900 border border-ink-700 rounded-lg overflow-hidden">
   <div class="px-6 py-3 border-b border-ink-700">
-    <h2 class="font-semibold text-slate-100">Past conversions</h2>
+    <h2 class="font-semibold text-slate-100">Past conversions ({{ kind }})</h2>
   </div>
   <div class="divide-y divide-ink-800">
     {% for p in existing %}
-      {% set fqn_dotted = p.stem.replace('_', '.').replace('.meta', '') %}
     <div class="px-6 py-3 flex items-center justify-between">
-      <div class="font-mono text-sm text-slate-300">{{ fqn_dotted }}</div>
-      <button hx-get="/convert/view/{{ fqn_dotted }}" hx-target="#conv-result" hx-swap="innerHTML"
-              class="px-3 py-1.5 text-sm rounded bg-ink-800 border border-ink-700 hover:bg-ink-700">View</button>
+      <div class="font-mono text-sm text-slate-300">{{ p.stem }}</div>
+      {% if kind == 'table' %}
+        {% set fqn_dotted = p.stem.replace('_', '.').replace('.meta', '') %}
+        <button hx-get="/convert/view/{{ fqn_dotted }}" hx-target="#conv-result" hx-swap="innerHTML"
+                class="px-3 py-1.5 text-sm rounded bg-ink-800 border border-ink-700 hover:bg-ink-700">View</button>
+      {% else %}
+        <button hx-get="/convert/code/view?file={{ p }}" hx-target="#conv-result" hx-swap="innerHTML"
+                class="px-3 py-1.5 text-sm rounded bg-ink-800 border border-ink-700 hover:bg-ink-700">View</button>
+      {% endif %}
     </div>
     {% endfor %}
   </div>
@@ -68,25 +180,19 @@
 <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.50.0/min/vs/loader.js"></script>
 <script>
   require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.50.0/min/vs' } });
-  // Pre-warm Monaco so the partial loads instantly when injected.
   require(['vs/editor/editor.main'], function () { window.__monacoReady = true; });
 
-  // Helper called by injected conversion-result partials to mount the diff editor.
-  window.mountConvertDiff = function (containerId, original, modified) {
+  window.mountConvertDiff = function (containerId, original, modified, lang = 'sql') {
     const tryMount = () => {
       if (!window.__monacoReady) { setTimeout(tryMount, 80); return; }
       const el = document.getElementById(containerId);
       if (!el) return;
       el.innerHTML = '';
-      const o = monaco.editor.createModel(original || '', 'sql');
-      const m = monaco.editor.createModel(modified || '', 'sql');
+      const o = monaco.editor.createModel(original || '', lang);
+      const m = monaco.editor.createModel(modified || '', lang);
       const ed = monaco.editor.createDiffEditor(el, {
-        automaticLayout: true,
-        readOnly: true,
-        theme: 'vs-dark',
-        renderSideBySide: true,
-        fontSize: 12,
-        lineNumbers: 'on',
+        automaticLayout: true, readOnly: true, theme: 'vs-dark',
+        renderSideBySide: true, fontSize: 12, lineNumbers: 'on',
         minimap: { enabled: false },
       });
       ed.setModel({ original: o, modified: m });

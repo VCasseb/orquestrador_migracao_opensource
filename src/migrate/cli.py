@@ -140,17 +140,43 @@ def plan(
 
 @app.command()
 def convert(
-    fqn: str = typer.Argument(..., help="Fully-qualified BigQuery name: project.dataset.table"),
-    no_llm: bool = typer.Option(False, "--no-llm", help="Disable Claude fallback even if sqlglot fails."),
+    kind: str = typer.Argument("table", help="What to convert: table | dag | notebook"),
+    name: str = typer.Argument(..., help="Object name (table FQN, DAG id, or notebook id)"),
+    target: str = typer.Option(None, "--target", help="Override TARGET_PLATFORM: databricks | aws"),
+    prompt: str = typer.Option("", "--prompt", "-p", help="Custom instructions for the LLM (free text)"),
+    no_llm: bool = typer.Option(False, "--no-llm", help="(table-only) disable Claude fallback if sqlglot fails"),
 ) -> None:
-    """Transpile SQL, generate Delta DDL and a notebook for one object."""
+    """Convert a table SQL, an Airflow DAG, or a notebook to the target platform."""
     load_env()
-    from migrate.core.convert.runner import convert_table
-    art = convert_table(fqn=fqn, use_llm_fallback=not no_llm)
-    color = {"high": "green", "medium": "yellow", "0%": "red"}.get(art.confidence, "white")
-    console.print(f"[{color}]✓[/{color}] {fqn} — method={art.method}, confidence={art.confidence}")
+    if kind == "table":
+        from migrate.core.convert.runner import convert_table
+        art = convert_table(fqn=name, use_llm_fallback=not no_llm)
+        color = {"high": "green", "medium": "yellow", "0%": "red"}.get(art.confidence, "white")
+        console.print(f"[{color}]✓[/{color}] table {name} — method={art.method}, confidence={art.confidence}")
+        for n in art.notes:
+            console.print(f"  · {n}")
+        if art.error:
+            console.print(f"[red]error:[/red] {art.error}")
+        return
+
+    from migrate.core.convert.code import convert_dag, convert_notebook
+    if kind == "dag":
+        art = convert_dag(name=name, target=target, custom_prompt=prompt)
+    elif kind == "notebook":
+        art = convert_notebook(name=name, target=target, custom_prompt=prompt)
+    else:
+        console.print(f"[red]Unknown kind: {kind}. Use 'table', 'dag', or 'notebook'.[/red]")
+        raise typer.Exit(1)
+
+    color = "red" if art.error else "green"
+    console.print(f"[{color}]✓[/{color}] {kind} {name} → {art.target_platform}")
+    console.print(f"  output:    {art.output_path}")
+    console.print(f"  target:    {art.target_suggested_path}")
+    console.print(f"  model:     {art.llm_model_used or '—'}")
+    if art.custom_prompt_used:
+        console.print(f"  prompt:    [italic]{art.custom_prompt_used[:80]}{'...' if len(art.custom_prompt_used) > 80 else ''}[/italic]")
     for n in art.notes:
-        console.print(f"  · {n}")
+        console.print(f"  note:      {n}")
     if art.error:
         console.print(f"[red]error:[/red] {art.error}")
 
