@@ -53,6 +53,37 @@
         {% if table.source_schedule %}<div><span class="text-slate-500">Schedule:</span> <code class="text-slate-300">{{ table.source_schedule }}</code></div>{% endif %}
       </div>
 
+      {% if table.source_kind == 'external_gcs' or table.external_source_uris %}
+      <h3 class="text-sm font-semibold text-slate-200 mt-5 mb-2 flex items-center gap-2">
+        <span>☁</span><span>External storage (GCS)</span>
+      </h3>
+      <div class="bg-cyan-950/20 border border-cyan-800/30 rounded p-3 text-xs space-y-1.5">
+        <div>
+          <span class="text-slate-500">Format:</span>
+          <code class="text-cyan-300">{{ table.external_format or "—" }}</code>
+          {% if table.external_compression %}<span class="text-slate-500 ml-2">compression:</span> <code class="text-cyan-300">{{ table.external_compression }}</code>{% endif %}
+          {% if table.external_hive_partitioning %}<span class="ml-2 px-1.5 py-0.5 rounded bg-cyan-900/40 text-cyan-300">Hive-partitioned</span>{% endif %}
+        </div>
+        <div>
+          <span class="text-slate-500">Source URI(s):</span>
+          {% for uri in table.external_source_uris %}
+            <div class="font-mono text-cyan-200 break-all pl-3">{{ uri }}</div>
+          {% endfor %}
+        </div>
+        <div class="border-t border-cyan-800/30 pt-2 mt-2 text-slate-400">
+          <strong class="text-slate-200">Migration strategy:</strong>
+          dado vive no GCS, não no BQ. Para migrar:
+          <ol class="list-decimal pl-5 mt-1 space-y-0.5">
+            <li>Mover arquivos GCS → S3 (Storage Transfer Service ou DataSync, fora do framework).</li>
+            <li>Configurar UC <strong>External Location</strong> apontando pro bucket S3 alvo.</li>
+            <li>Gerar Auto Loader notebook que ingere de S3 → Delta managed
+              {% if table.external_hive_partitioning %}(usar <code>cloudFiles.partitionColumns</code> pra preservar Hive){% endif %}.</li>
+            <li>Alternativa: registrar como Delta external table apontando direto pro S3 (sem ingestão, mais barato pra dado raramente lido).</li>
+          </ol>
+        </div>
+      </div>
+      {% endif %}
+
       {% set producing_sql = table.view_query or table.source_sql %}
       {% if producing_sql %}
         <h3 class="text-sm font-semibold text-slate-200 mt-5 mb-2">

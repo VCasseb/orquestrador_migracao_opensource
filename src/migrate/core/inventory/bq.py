@@ -105,22 +105,50 @@ def _scan_dataset(client, project: str, dataset: str) -> list[TableMetadata]:
         for row in client.query(tabs_q).result():
             ttype = _TABLE_TYPE_MAP.get(row.table_type, "TABLE")
             row_count, size_bytes = legacy_by_table.get(row.table_name, (None, None))
-            tables.append(
-                TableMetadata(
-                    project=project,
-                    dataset=dataset,
-                    name=row.table_name,
-                    type=ttype,
-                    columns=cols_by_table.get(row.table_name, []),
-                    row_count=row_count,
-                    size_bytes=size_bytes,
-                    view_query=view_by_table.get(row.table_name),
-                    description=desc_by_table.get(row.table_name, ""),
-                )
+            t = TableMetadata(
+                project=project,
+                dataset=dataset,
+                name=row.table_name,
+                type=ttype,
+                columns=cols_by_table.get(row.table_name, []),
+                row_count=row_count,
+                size_bytes=size_bytes,
+                view_query=view_by_table.get(row.table_name),
+                description=desc_by_table.get(row.table_name, ""),
             )
+            if ttype == "EXTERNAL":
+                _attach_external_config(client, t)
+            tables.append(t)
     except Exception as e:
         print(f"  [ERROR] {project}.{dataset}: TABLES query failed — {e}", file=sys.stderr)
     return tables
+
+
+def _attach_external_config(client, t: TableMetadata) -> None:
+    """For EXTERNAL tables, fetch the external_data_configuration via the BQ API
+    (it's not exposed in INFORMATION_SCHEMA). Sets source_kind=external_gcs and
+    populates external_source_uris/external_format/external_hive_partitioning."""
+    try:
+        full = client.get_table(f"{t.project}.{t.dataset}.{t.name}")
+        cfg = getattr(full, "external_data_configuration", None)
+        if not cfg:
+            return
+        uris = list(getattr(cfg, "source_uris", []) or [])
+        fmt = getattr(cfg, "source_format", None)
+        compression = getattr(cfg, "compression", None)
+        hive_opts = getattr(cfg, "hive_partitioning_options", None)
+        hive = bool(hive_opts and getattr(hive_opts, "mode", None))
+
+        t.external_source_uris = uris
+        t.external_format = str(fmt) if fmt else None
+        t.external_compression = str(compression) if compression else None
+        t.external_hive_partitioning = hive
+
+        # Auto-link source_kind. If all URIs are gs://, mark as external_gcs.
+        if uris and all(u.startswith("gs://") for u in uris):
+            t.source_kind = "external_gcs"
+    except Exception as e:
+        print(f"  [WARN] {t.fqn}: external config fetch failed — {e}", file=sys.stderr)
 
 
 def _bq_region(location: str | None) -> str:

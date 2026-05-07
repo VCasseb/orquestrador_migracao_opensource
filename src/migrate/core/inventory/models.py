@@ -14,6 +14,7 @@ SourceKind = Literal[
     "dag_python",           # Composer DAG with PythonOperator transformation
     "dag_notebook",         # Composer DAG that executes a notebook
     "notebook",             # Vertex Workbench / Colab / GCS .ipynb (no DAG)
+    "external_gcs",         # BQ EXTERNAL table — data lives in GCS, not in BQ storage
     "manual",               # Loaded by humans / external pipeline
     "unknown",
 ]
@@ -51,6 +52,12 @@ class TableMetadata(BaseModel):
     source_dag_task: str | None = None         # task within the DAG
     source_notebook_id: str | None = None      # notebook name (links to NotebookMetadata)
     source_scheduled_query_id: str | None = None  # BQ DTS config id
+
+    # External table info (when type == EXTERNAL — data lives in GCS, not BQ storage)
+    external_source_uris: list[str] = Field(default_factory=list)  # ["gs://bucket/path/*.parquet"]
+    external_format: str | None = None          # PARQUET / AVRO / CSV / JSON / ORC / ICEBERG
+    external_hive_partitioning: bool = False    # detected gs://.../year=/month=/day=/ layout
+    external_compression: str | None = None     # GZIP / SNAPPY / etc
 
     @property
     def fqn(self) -> str:

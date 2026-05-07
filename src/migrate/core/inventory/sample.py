@@ -185,6 +185,36 @@ LEFT JOIN `prj-data-prod.silver.orders_enriched` oe
         description="Legacy ETL log — likely cold, candidate for archival.",
     ))
 
+    rows.append(TableMetadata(
+        project="prj-data-prod", dataset="raw", name="events_archive_external",
+        type="EXTERNAL", size_bytes=None, row_count=None, query_count_30d=320,
+        partitioning="event_date",
+        source_kind="external_gcs",
+        external_source_uris=["gs://prj-data-archive/events/year=*/month=*/day=*/*.parquet"],
+        external_format="PARQUET",
+        external_hive_partitioning=True,
+        external_compression="SNAPPY",
+        columns=_cols(
+            ("event_id", "STRING"), ("user_id", "STRING"), ("event_type", "STRING"),
+            ("event_ts", "TIMESTAMP"), ("event_date", "DATE"), ("payload", "JSON"),
+        ),
+        description="External table over Parquet archive in GCS. Hive-partitioned by date.",
+    ))
+    rows.append(TableMetadata(
+        project="prj-marketing-prod", dataset="raw", name="impressions_csv_external",
+        type="EXTERNAL", size_bytes=None, row_count=None, query_count_30d=12,
+        source_kind="external_gcs",
+        external_source_uris=["gs://prj-mkt-incoming/feeds/impressions/*.csv.gz"],
+        external_format="CSV",
+        external_hive_partitioning=False,
+        external_compression="GZIP",
+        columns=_cols(
+            ("impression_id", "STRING"), ("campaign_id", "STRING"),
+            ("user_id", "STRING"), ("event_ts", "TIMESTAMP"),
+        ),
+        description="External CSV feed from third-party DSP. Lands daily.",
+    ))
+
     return rows
 
 
