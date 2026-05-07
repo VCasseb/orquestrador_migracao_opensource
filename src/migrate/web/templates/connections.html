@@ -3,13 +3,21 @@
 {% block content %}
 <div class="mb-8">
   <h1 class="text-2xl font-semibold text-slate-100">Connections</h1>
-  <p class="text-slate-400 mt-1">Configure access to GCP, Databricks, and Anthropic. Credentials are saved to <code class="text-accent-500">.env</code> (gitignored).</p>
+  <p class="text-slate-400 mt-1">Configure access to GCP, Databricks, and your LLM provider. Credentials saved to <code class="text-accent-500">.env</code> (gitignored).</p>
 </div>
 
 <div class="space-y-6">
+  <h2 class="text-xs uppercase tracking-wider text-slate-500 mt-2">Cloud / data sources</h2>
   <div id="card-gcp">{% include "_card_gcp.html" %}</div>
   <div id="card-databricks">{% include "_card_databricks.html" %}</div>
-  <div id="card-anthropic">{% include "_card_anthropic.html" %}</div>
   {% include "_card_aws.html" %}
+
+  <h2 class="text-xs uppercase tracking-wider text-slate-500 mt-6">LLM provider — pick ONE active</h2>
+  <div id="llm-active-pill">{% include "_llm_active_pill.html" %}</div>
+
+  <div id="card-openai">{% include "_card_openai.html" %}</div>
+  <div id="card-bedrock">{% include "_card_bedrock.html" %}</div>
+  <div id="card-gemini">{% include "_card_gemini.html" %}</div>
+  <div id="card-anthropic">{% include "_card_anthropic.html" %}</div>
 </div>
 {% endblock %}

@@ -4,8 +4,9 @@
     <h2 class="font-semibold text-slate-100">AWS <span class="text-xs text-slate-500 font-normal">(not required)</span></h2>
   </div>
   <div class="px-6 py-5 text-sm text-slate-400 leading-relaxed">
-    AWS access is handled by Unity Catalog via <strong class="text-slate-300">External Locations</strong>.
-    Configure that once in Databricks; this framework never talks to S3 directly.
-    Add direct AWS credentials here only if a future module needs them.
+    AWS storage access is handled by Unity Catalog via <strong class="text-slate-300">External Locations</strong> —
+    this framework never talks to S3 directly for data.
+    For <strong class="text-amber-300">Bedrock LLM</strong> calls, configure the AWS region + credentials
+    in the AWS Bedrock card below (LLM provider section).
   </div>
 </div>

@@ -112,19 +112,9 @@ class CodeConversionArtifact(BaseModel):
 
 
 def _llm_call(system: str, user: str) -> tuple[str, str]:
-    load_env()
-    api_key = get_env("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise RuntimeError("ANTHROPIC_API_KEY not configured (Connections page).")
-    from anthropic import Anthropic
-    model = get_env("ANTHROPIC_MODEL", "claude-sonnet-4-6")
-    client = Anthropic(api_key=api_key)
-    msg = client.messages.create(
-        model=model, max_tokens=8000,
-        system=system,
-        messages=[{"role": "user", "content": user}],
-    )
-    text = "".join(b.text for b in msg.content if b.type == "text").strip()
+    """Dispatches to whichever LLM_PROVIDER is active (anthropic / openai / gemini / bedrock)."""
+    from migrate.core.llm import complete
+    text, model = complete(system, user, max_tokens=8000)
     if text.startswith("```"):
         lines = [ln for ln in text.splitlines() if not ln.strip().startswith("```")]
         text = "\n".join(lines).strip()

@@ -1,22 +1,12 @@
 from __future__ import annotations
 
-from migrate.core.credentials import get_env, load_env
-
 
 def llm_repair(bq_sql: str, sqlglot_error: str | None = None) -> tuple[str, str]:
-    """Use Claude to repair SQL that sqlglot couldn't transpile.
+    """Use the active LLM provider to repair SQL that sqlglot couldn't transpile.
 
-    Returns (converted_sql, model_used). Raises RuntimeError if no API key.
+    Returns (converted_sql, model_used).
     """
-    load_env()
-    api_key = get_env("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise RuntimeError("ANTHROPIC_API_KEY not configured")
-
-    from anthropic import Anthropic
-
-    model = get_env("ANTHROPIC_MODEL", "claude-sonnet-4-6")
-    client = Anthropic(api_key=api_key)
+    from migrate.core.llm import complete
 
     sys = (
         "You convert BigQuery SQL to Databricks SQL (Spark SQL dialect, Unity Catalog ready). "
@@ -28,13 +18,7 @@ def llm_repair(bq_sql: str, sqlglot_error: str | None = None) -> tuple[str, str]
     if sqlglot_error:
         user_parts.append(f"\nSqlglot transpile error context: {sqlglot_error}")
 
-    msg = client.messages.create(
-        model=model,
-        max_tokens=4000,
-        system=sys,
-        messages=[{"role": "user", "content": "\n".join(user_parts)}],
-    )
-    text = "".join(b.text for b in msg.content if b.type == "text").strip()
+    text, model = complete(sys, "\n".join(user_parts), max_tokens=4000)
     if text.startswith("```"):
         lines = [ln for ln in text.splitlines() if not ln.strip().startswith("```")]
         text = "\n".join(lines).strip()

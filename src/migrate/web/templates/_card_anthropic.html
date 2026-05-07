@@ -1,15 +1,16 @@
-<div class="bg-ink-900 border border-ink-700 rounded-lg overflow-hidden">
+<div class="bg-ink-900 border {% if state.anthropic.active %}border-purple-700/40{% else %}border-ink-700{% endif %} rounded-lg overflow-hidden">
   <div class="px-6 py-4 border-b border-ink-700 flex items-center justify-between">
     <div class="flex items-center gap-3">
       <div class="w-2 h-2 rounded-full {% if state.anthropic.has_key %}bg-emerald-500{% else %}bg-slate-600{% endif %}"></div>
-      <h2 class="font-semibold text-slate-100">Anthropic <span class="text-xs text-slate-500 font-normal">(LLM fallback for SQL conversion)</span></h2>
+      <h2 class="font-semibold text-slate-100">Anthropic <span class="text-xs text-slate-500 font-normal">(Claude direct)</span></h2>
+      {% if state.anthropic.active %}<span class="text-xs px-2 py-0.5 rounded bg-purple-950/40 text-purple-300">● active</span>{% endif %}
     </div>
     {% if result and result.saved %}<span class="text-xs text-emerald-400">Saved</span>{% endif %}
   </div>
   <form class="px-6 py-5 space-y-4"
         hx-post="/connections/anthropic/save"
-        hx-target="#card-anthropic"
-        hx-swap="innerHTML">
+        hx-target="closest div.bg-ink-900"
+        hx-swap="outerHTML">
     <div>
       <label class="block text-sm text-slate-400 mb-1">
         API Key
@@ -42,6 +43,14 @@
               class="px-4 py-2 text-sm rounded bg-accent-600 hover:bg-accent-700 text-ink-950 font-medium transition-colors">
         Save
       </button>
+      {% if not state.anthropic.active %}
+        <button type="button"
+                hx-post="/connections/llm/active" hx-vals='{"provider": "anthropic"}'
+                hx-target="#llm-active-pill" hx-swap="outerHTML"
+                class="px-3 py-2 text-xs rounded bg-purple-950/40 border border-purple-700/40 text-purple-300 hover:bg-purple-900/40">
+          Make active
+        </button>
+      {% endif %}
       <div id="test-result-anthropic" class="flex-1"></div>
     </div>
   </form>
