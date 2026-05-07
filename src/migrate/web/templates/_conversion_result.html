@@ -1,0 +1,84 @@
+{% set conf_color = {'high': 'emerald', 'medium': 'amber', '0%': 'rose', 'n/a': 'slate'}.get(artifact.confidence, 'slate') %}
+{% set source_sql = (table.view_query if table else None) or (table.source_sql if table else None) %}
+{% set has_diff = source_sql and artifact.converted_sql %}
+{% set diff_id = 'diff-' ~ artifact.fqn|replace('.', '_')|replace('-', '_') %}
+
+<div class="bg-ink-900 border border-ink-700 rounded-lg overflow-hidden mt-4"
+     x-data="{ tab: '{{ 'diff' if has_diff else 'ddl' }}' }">
+  <div class="px-6 py-4 border-b border-ink-700 flex items-center justify-between">
+    <div>
+      <div class="font-mono text-slate-200">{{ artifact.fqn }}</div>
+      <div class="text-xs text-slate-500 mt-1">
+        method: <span class="text-slate-300">{{ artifact.method }}</span>
+        {% if artifact.llm_model_used %}· model: <span class="text-slate-300">{{ artifact.llm_model_used }}</span>{% endif %}
+        · {{ artifact.converted_at.strftime('%Y-%m-%d %H:%M UTC') }}
+      </div>
+    </div>
+    <div class="inline-block px-3 py-1 rounded text-sm font-semibold
+                bg-{{ conf_color }}-950/40 border border-{{ conf_color }}-800/40 text-{{ conf_color }}-300">
+      confidence: {{ artifact.confidence }}
+    </div>
+  </div>
+
+  {% if artifact.error %}
+  <div class="px-6 py-3 bg-rose-950/30 border-b border-rose-800/40 text-rose-300 text-sm">
+    {{ artifact.error }}
+  </div>
+  {% endif %}
+
+  {% if artifact.notes %}
+  <div class="px-6 py-3 bg-amber-950/20 border-b border-amber-800/30 text-sm text-amber-200">
+    {% for n in artifact.notes %}<div>· {{ n }}</div>{% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="border-b border-ink-700 px-6 flex gap-4 text-sm">
+    {% if has_diff %}
+      <button @click="tab='diff'"
+              :class="tab==='diff' ? 'border-accent-500 text-accent-500' : 'border-transparent text-slate-400 hover:text-slate-200'"
+              class="py-2 border-b-2 transition-colors">SQL diff</button>
+    {% endif %}
+    <button @click="tab='ddl'"
+            :class="tab==='ddl' ? 'border-accent-500 text-accent-500' : 'border-transparent text-slate-400 hover:text-slate-200'"
+            class="py-2 border-b-2 transition-colors">Delta DDL</button>
+    <button @click="tab='notebook'"
+            :class="tab==='notebook' ? 'border-accent-500 text-accent-500' : 'border-transparent text-slate-400 hover:text-slate-200'"
+            class="py-2 border-b-2 transition-colors">Notebook</button>
+  </div>
+
+  <div>
+    {% if has_diff %}
+    <div x-show="tab==='diff'" class="px-6 py-4">
+      <div class="text-xs text-slate-500 mb-2">
+        <span>← BigQuery (source)</span>
+        <span class="mx-2">·</span>
+        <span>Databricks (converted) →</span>
+      </div>
+      <div id="{{ diff_id }}" style="height: 55vh;" class="border border-ink-700 rounded"></div>
+      <script>
+        (function () {
+          const orig = {{ source_sql|tojson }};
+          const mod  = {{ artifact.converted_sql|tojson }};
+          window.mountConvertDiff('{{ diff_id }}', orig, mod);
+        })();
+      </script>
+    </div>
+    {% else %}
+    <div class="px-6 py-3 text-xs text-slate-500 italic border-b border-ink-700">
+      No SQL to diff: this is a base TABLE without a view_query or source SQL — only the DDL is generated.
+    </div>
+    {% endif %}
+
+    <div x-show="tab==='ddl'" class="px-6 py-4">
+      <pre class="bg-ink-800 border border-ink-700 rounded p-3 text-xs text-slate-200 overflow-x-auto whitespace-pre">{{ artifact.ddl }}</pre>
+    </div>
+    <div x-show="tab==='notebook'" class="px-6 py-4">
+      {% if artifact.notebook_path %}
+        <div class="text-xs text-slate-500 mb-2">{{ artifact.notebook_path }}</div>
+        <pre class="bg-ink-800 border border-ink-700 rounded p-3 text-xs text-slate-200 overflow-x-auto whitespace-pre max-h-[60vh]">{{ notebook_text }}</pre>
+      {% else %}
+        <div class="text-sm text-slate-400">No notebook generated (no SQL to wrap).</div>
+      {% endif %}
+    </div>
+  </div>
+</div>

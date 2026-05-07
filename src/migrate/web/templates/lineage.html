@@ -1,0 +1,235 @@
+{% extends "base.html" %}
+{% block title %}Lineage · migrate{% endblock %}
+{% block content %}
+<div class="mb-4">
+  <h1 class="text-2xl font-semibold text-slate-100">Lineage</h1>
+  {% if inv %}
+    <p class="text-slate-400 mt-1 text-sm">Cross-project graph including DAGs, notebooks, and scheduled queries. Click any node — table opens detail; DAG/NB/SQ open the source code.</p>
+  {% else %}
+    <p class="text-slate-400 mt-1 text-sm">No inventory yet. Run <a href="/inventory" class="text-accent-500 hover:underline">a scan</a> first.</p>
+  {% endif %}
+</div>
+
+{% if inv %}
+<!-- toolbar -->
+<div class="bg-ink-900 border border-ink-700 rounded-lg px-3 py-2 mb-3 flex items-center gap-2 flex-wrap">
+  <input id="lineage-search" type="text" placeholder="Search node…"
+         class="bg-ink-800 border border-ink-700 rounded px-3 py-1.5 text-sm w-56" />
+
+  <select id="lineage-project" class="bg-ink-800 border border-ink-700 rounded px-3 py-1.5 text-sm">
+    <option value="">All projects</option>
+    {% for p in inv.projects %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
+  </select>
+
+  <div id="kind-chips" class="flex gap-1">
+    <button data-kind="" class="kind-chip active px-2.5 py-1 text-xs rounded border border-ink-700">All</button>
+    <button data-kind="table" class="kind-chip px-2.5 py-1 text-xs rounded border border-ink-700">Tables</button>
+    <button data-kind="dag" class="kind-chip px-2.5 py-1 text-xs rounded border border-ink-700">DAGs</button>
+    <button data-kind="notebook" class="kind-chip px-2.5 py-1 text-xs rounded border border-ink-700">Notebooks</button>
+    <button data-kind="sq" class="kind-chip px-2.5 py-1 text-xs rounded border border-ink-700">SQs</button>
+  </div>
+
+  <div class="ml-auto flex gap-2 items-center">
+    <select id="lineage-layout" class="bg-ink-800 border border-ink-700 rounded px-3 py-1.5 text-sm">
+      <option value="dagre-lr">Dagre LR (left→right)</option>
+      <option value="dagre-tb">Dagre TB (top→bottom)</option>
+      <option value="concentric">Concentric</option>
+      <option value="breadthfirst">Breadth-first</option>
+      <option value="cose">Force-directed</option>
+    </select>
+    <button id="lineage-fit" class="px-2 py-1 text-xs rounded bg-ink-800 border border-ink-700 hover:bg-ink-700">Fit</button>
+    <button id="lineage-reset" class="px-2 py-1 text-xs rounded bg-ink-800 border border-ink-700 hover:bg-ink-700">Reset</button>
+    <span id="lineage-count" class="text-xs text-slate-500 ml-2"></span>
+  </div>
+</div>
+
+<div class="grid grid-cols-4 gap-4">
+  <div class="col-span-3 bg-ink-900 border border-ink-700 rounded-lg" style="height: 70vh;">
+    <div id="cy" class="w-full h-full"></div>
+  </div>
+  <div class="bg-ink-900 border border-ink-700 rounded-lg p-4">
+    <h3 class="text-sm font-semibold text-slate-200 mb-3">Legend</h3>
+    <div class="space-y-1.5 text-xs text-slate-400">
+      <div class="flex items-center gap-2"><span class="inline-block w-3 h-3 rounded bg-cyan-500"></span>Table</div>
+      <div class="flex items-center gap-2"><span class="inline-block w-3 h-3 rounded bg-purple-500"></span>View</div>
+      <div class="flex items-center gap-2"><span class="inline-block w-3 h-3 rounded bg-pink-500"></span>Materialized view</div>
+      <div class="flex items-center gap-2"><span class="inline-block w-3 h-3 rotate-45 bg-emerald-500"></span>DAG (Composer)</div>
+      <div class="flex items-center gap-2"><span class="inline-block w-3 h-3 rotate-45 bg-amber-500"></span>Notebook</div>
+      <div class="flex items-center gap-2"><span class="inline-block w-3 h-3 rounded-full bg-violet-500"></span>Scheduled query</div>
+      <div class="flex items-center gap-2"><span class="inline-block w-3 h-3 rounded bg-slate-600"></span>External</div>
+      <div class="border-t border-ink-700 pt-1.5 mt-1.5"></div>
+      <div class="flex items-center gap-2"><span class="inline-block w-3 h-3 rounded border-2 border-orange-500"></span>Hot</div>
+      <div class="flex items-center gap-2"><span class="inline-block w-3 h-3 rounded border-2 border-yellow-500"></span>Warm</div>
+      <div class="flex items-center gap-2"><span class="inline-block w-3 h-3 rounded border-2 border-slate-600"></span>Cold</div>
+    </div>
+    <h3 class="text-sm font-semibold text-slate-200 mt-5 mb-2">Selection</h3>
+    <div id="lineage-detail" class="text-xs text-slate-400">Click a node…</div>
+  </div>
+</div>
+
+<!-- modal target for DAG/NB/SQ source detail -->
+<div id="detail-modal"></div>
+
+<style>
+  .kind-chip { background-color: transparent; color: #94a3b8; transition: all 150ms; }
+  .kind-chip:hover { color: #e2e8f0; }
+  .kind-chip.active { background-color: #1f2a3d; color: #22d3ee; border-color: #22d3ee; }
+</style>
+
+<script src="https://unpkg.com/cytoscape@3.30.2/dist/cytoscape.min.js"></script>
+<script src="https://unpkg.com/dagre@0.8.5/dist/dagre.min.js"></script>
+<script src="https://unpkg.com/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
+<script src="https://unpkg.com/htmx.org@2.0.2"></script>
+<script>
+(function () {
+  let cy;
+  const layoutOptions = {
+    'dagre-lr':     { name: 'dagre', rankDir: 'LR', nodeSep: 40, rankSep: 110 },
+    'dagre-tb':     { name: 'dagre', rankDir: 'TB', nodeSep: 50, rankSep: 80 },
+    'concentric':   { name: 'concentric', minNodeSpacing: 50 },
+    'breadthfirst': { name: 'breadthfirst', spacingFactor: 1.5 },
+    'cose':         { name: 'cose', nodeRepulsion: 8000, idealEdgeLength: 100 },
+  };
+
+  fetch('/lineage/graph.json').then(r => r.json()).then(data => {
+    cy = cytoscape({
+      container: document.getElementById('cy'),
+      elements: data.elements,
+      style: [
+        { selector: 'node', style: {
+            'background-color': 'data(background_color)',
+            'border-color': 'data(border_color)',
+            'border-width': 3,
+            'label': 'data(label)',
+            'color': '#e2e8f0',
+            'font-size': '11px',
+            'font-family': 'ui-monospace, monospace',
+            'text-valign': 'bottom',
+            'text-margin-y': 6,
+            'text-wrap': 'wrap',
+            'text-max-width': '180px',
+            'width': 18, 'height': 18,
+            'shape': 'data(shape)',
+        }},
+        { selector: 'node[kind="dag"]',      style: { 'width': 22, 'height': 22, 'border-width': 2 } },
+        { selector: 'node[kind="notebook"]', style: { 'width': 20, 'height': 20, 'border-width': 2 } },
+        { selector: 'node[kind="sq"]',       style: { 'width': 18, 'height': 18 } },
+        { selector: 'edge', style: {
+            'width': 1.5,
+            'line-color': '#334155',
+            'target-arrow-color': '#475569',
+            'target-arrow-shape': 'triangle',
+            'arrow-scale': 0.9,
+            'curve-style': 'bezier',
+        }},
+        { selector: '.faded', style: { 'opacity': 0.1 }},
+        { selector: '.up',    style: { 'line-color': '#06b6d4', 'target-arrow-color': '#06b6d4', 'width': 2.5 }},
+        { selector: '.down',  style: { 'line-color': '#a855f7', 'target-arrow-color': '#a855f7', 'width': 2.5 }},
+        { selector: 'node:selected', style: { 'border-color': '#22d3ee', 'border-width': 5 } },
+      ],
+      layout: layoutOptions['dagre-lr'],
+      wheelSensitivity: 0.25,
+    });
+
+    updateCount();
+
+    cy.on('tap', 'node', evt => {
+      const n = evt.target;
+      const d = n.data();
+      cy.elements().addClass('faded').removeClass('up down');
+      n.removeClass('faded');
+      n.predecessors().removeClass('faded').addClass('up');
+      n.successors().removeClass('faded').addClass('down');
+
+      let actionHtml = '';
+      if (d.kind === 'dag') {
+        actionHtml = `<div class="mt-2"><button class="text-accent-500 hover:underline text-xs"
+          hx-get="/inventory/source/dag/${d.fqn.replace('composer.', '')}"
+          hx-target="#detail-modal" hx-swap="innerHTML">→ Open DAG source</button></div>`;
+      } else if (d.kind === 'notebook') {
+        actionHtml = `<div class="mt-2"><button class="text-accent-500 hover:underline text-xs"
+          hx-get="/inventory/source/notebook/${d.fqn.replace('notebook.', '')}"
+          hx-target="#detail-modal" hx-swap="innerHTML">→ Open notebook source</button></div>`;
+      } else if (d.kind === 'sq') {
+        actionHtml = `<div class="mt-2"><button class="text-accent-500 hover:underline text-xs"
+          hx-get="/inventory/source/sq/${d.fqn.replace('sq.', '')}"
+          hx-target="#detail-modal" hx-swap="innerHTML">→ Open scheduled query</button></div>`;
+      } else if (d.kind === 'table') {
+        actionHtml = `<div class="mt-2"><button class="text-accent-500 hover:underline text-xs"
+          hx-get="/inventory/detail/${d.fqn}"
+          hx-target="#detail-modal" hx-swap="innerHTML">→ Open table detail</button></div>`;
+      }
+      document.getElementById('lineage-detail').innerHTML = `
+        <div class="font-mono text-slate-200 break-all text-xs">${d.fqn}</div>
+        <div class="mt-1 text-slate-500 text-xs">${d.type} · heat: ${d.heat}</div>
+        ${actionHtml}
+      `;
+      htmx.process(document.getElementById('lineage-detail'));
+    });
+    cy.on('tap', evt => {
+      if (evt.target === cy) {
+        cy.elements().removeClass('faded up down');
+        document.getElementById('lineage-detail').textContent = 'Click a node…';
+      }
+    });
+
+    document.getElementById('lineage-fit').onclick = () => cy.fit();
+    document.getElementById('lineage-reset').onclick = () => {
+      cy.elements().removeClass('faded up down hidden').show();
+      document.getElementById('lineage-search').value = '';
+      document.getElementById('lineage-project').value = '';
+      document.querySelectorAll('.kind-chip').forEach(c => c.classList.remove('active'));
+      document.querySelector('.kind-chip[data-kind=""]').classList.add('active');
+      cy.fit();
+      updateCount();
+    };
+    document.getElementById('lineage-layout').onchange = (e) => {
+      cy.layout(layoutOptions[e.target.value]).run();
+    };
+    document.getElementById('lineage-search').oninput = applyFilters;
+    document.getElementById('lineage-project').onchange = applyFilters;
+    document.getElementById('kind-chips').addEventListener('click', e => {
+      const btn = e.target.closest('.kind-chip');
+      if (!btn) return;
+      document.querySelectorAll('.kind-chip').forEach(c => c.classList.remove('active'));
+      btn.classList.add('active');
+      applyFilters();
+    });
+  });
+
+  function applyFilters() {
+    if (!cy) return;
+    const search = (document.getElementById('lineage-search').value || '').toLowerCase();
+    const project = document.getElementById('lineage-project').value || '';
+    const kind = document.querySelector('.kind-chip.active').dataset.kind || '';
+
+    cy.batch(() => {
+      cy.nodes().forEach(n => {
+        const d = n.data();
+        const matchSearch = !search || (d.label || '').toLowerCase().includes(search) || (d.fqn || '').toLowerCase().includes(search);
+        const matchProject = !project || (d.fqn || '').startsWith(project + '.');
+        const matchKind = !kind || d.kind === kind;
+        if (matchSearch && matchProject && matchKind) {
+          n.show();
+        } else {
+          n.hide();
+        }
+      });
+      // hide edges whose endpoints are hidden
+      cy.edges().forEach(e => {
+        if (e.source().hidden() || e.target().hidden()) e.hide(); else e.show();
+      });
+    });
+    updateCount();
+  }
+
+  function updateCount() {
+    if (!cy) return;
+    const visible = cy.nodes(':visible').length;
+    const total = cy.nodes().length;
+    document.getElementById('lineage-count').textContent = `${visible}/${total} nodes`;
+  }
+})();
+</script>
+{% endif %}
+{% endblock %}

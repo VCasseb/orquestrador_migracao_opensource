@@ -1,0 +1,15 @@
+<div class="bg-ink-900 border border-ink-700 rounded-lg overflow-hidden mt-4">
+  <div class="px-6 py-3 border-b border-ink-700 flex items-center justify-between">
+    <div>
+      <div class="font-mono text-sm text-slate-200">{{ fqn }}</div>
+      <div class="text-xs text-slate-500">{{ path }} · ready to paste into Azure DevOps Wiki</div>
+    </div>
+    <div class="flex gap-2">
+      <button onclick="navigator.clipboard.writeText(document.getElementById('doc-content').textContent).then(() => this.textContent='✓ Copied!').catch(() => this.textContent='copy failed')"
+              class="px-3 py-1.5 text-sm rounded bg-accent-600 hover:bg-accent-700 text-ink-950 font-medium">Copy markdown</button>
+      <a href="/docs/raw/{{ fqn|replace('.', '_') }}" target="_blank"
+         class="px-3 py-1.5 text-sm rounded bg-ink-800 border border-ink-700 hover:bg-ink-700">Raw view</a>
+    </div>
+  </div>
+  <pre id="doc-content" class="bg-ink-800 m-0 p-4 text-xs text-slate-200 overflow-x-auto whitespace-pre max-h-[70vh]">{{ content }}</pre>
+</div>

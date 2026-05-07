@@ -1,0 +1,89 @@
+{% set verdict_color = {'pass': 'emerald', 'warn': 'amber', 'fail': 'rose'} %}
+{% set vc = verdict_color[report.verdict] %}
+
+<div class="bg-ink-900 border border-ink-700 rounded-lg overflow-hidden mt-4">
+  {% if report.is_synthetic %}
+    <div class="px-6 py-2 bg-purple-950/30 border-b border-purple-800/40 text-xs text-purple-300">
+      Synthetic example report — generated from sample inventory, no real connection used.
+    </div>
+  {% endif %}
+  <div class="px-6 py-4 border-b border-ink-700 flex items-start justify-between">
+    <div>
+      <div class="text-xs text-slate-500">{{ report.created_at.strftime('%Y-%m-%d %H:%M UTC') }}</div>
+      <div class="mt-1">
+        <span class="font-mono text-slate-200">{{ report.fqn_source }}</span>
+        <span class="text-slate-500 mx-2">↔</span>
+        <span class="font-mono text-slate-300">{{ report.fqn_target }}</span>
+      </div>
+    </div>
+    <div class="text-right">
+      <div class="inline-block px-3 py-1 rounded text-sm font-semibold
+                  bg-{{ vc }}-950/40 border border-{{ vc }}-800/40 text-{{ vc }}-300">
+        {{ report.verdict|upper }}
+      </div>
+      {% if saved_path %}<div class="text-xs text-slate-500 mt-2">Saved: {{ saved_path }}</div>{% endif %}
+    </div>
+  </div>
+
+  <div class="px-6 py-4 grid grid-cols-3 gap-4 text-sm">
+    <div>
+      <div class="text-xs uppercase tracking-wider text-slate-500">Row count</div>
+      <div class="text-slate-200 mt-1">
+        <span class="tabular-nums">{{ "{:,}".format(report.source.row_count) }}</span>
+        <span class="text-slate-500 mx-1">→</span>
+        <span class="tabular-nums">{{ "{:,}".format(report.target.row_count) }}</span>
+      </div>
+      <div class="text-xs mt-0.5 {% if report.row_count_diff_pct|abs > 5 %}text-rose-400{% else %}text-emerald-400{% endif %}">
+        {{ "%+.2f"|format(report.row_count_diff_pct) }}%
+      </div>
+    </div>
+    <div>
+      <div class="text-xs uppercase tracking-wider text-slate-500">Columns</div>
+      <div class="text-slate-200 mt-1">{{ report.source.columns|length }} ↔ {{ report.target.columns|length }}</div>
+    </div>
+    <div>
+      <div class="text-xs uppercase tracking-wider text-slate-500">Issues</div>
+      <div class="text-slate-200 mt-1">
+        <span class="text-rose-400">{{ report.columns_diff | selectattr('verdict', 'equalto', 'fail') | list | length }}</span> fail ·
+        <span class="text-amber-400">{{ report.columns_diff | selectattr('verdict', 'equalto', 'warn') | list | length }}</span> warn ·
+        <span class="text-emerald-400">{{ report.columns_diff | selectattr('verdict', 'equalto', 'pass') | list | length }}</span> pass
+      </div>
+    </div>
+  </div>
+
+  {% if report.diagnosis %}
+  <div class="px-6 py-3 border-t border-ink-700 bg-ink-800/50">
+    <div class="text-xs uppercase tracking-wider text-slate-500 mb-1">Diagnosis</div>
+    <p class="text-sm text-slate-300">{{ report.diagnosis }}</p>
+  </div>
+  {% endif %}
+
+  <table class="w-full text-sm border-t border-ink-700">
+    <thead class="bg-ink-800 text-xs uppercase tracking-wider text-slate-400">
+      <tr>
+        <th class="text-left px-4 py-2 font-medium">Column</th>
+        <th class="text-right px-3 py-2 font-medium">NULL drift</th>
+        <th class="text-right px-3 py-2 font-medium">Distinct drift</th>
+        <th class="text-right px-3 py-2 font-medium">Avg drift</th>
+        <th class="text-center px-3 py-2 font-medium">Verdict</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-ink-800">
+      {% for d in report.columns_diff %}
+        {% set dvc = verdict_color[d.verdict] %}
+        <tr class="hover:bg-ink-800/40">
+          <td class="px-4 py-2 font-mono text-slate-300">{{ d.name }}</td>
+          <td class="px-3 py-2 text-right tabular-nums {% if d.null_count_diff_pct|abs > 5 %}text-amber-400{% else %}text-slate-400{% endif %}">{{ "%+.2f"|format(d.null_count_diff_pct) }}%</td>
+          <td class="px-3 py-2 text-right tabular-nums {% if d.distinct_count_diff_pct|abs > 5 %}text-amber-400{% else %}text-slate-400{% endif %}">{{ "%+.2f"|format(d.distinct_count_diff_pct) }}%</td>
+          <td class="px-3 py-2 text-right tabular-nums {% if d.avg_diff_pct is not none and d.avg_diff_pct|abs > 5 %}text-amber-400{% else %}text-slate-500{% endif %}">{% if d.avg_diff_pct is not none %}{{ "%+.2f"|format(d.avg_diff_pct) }}%{% else %}—{% endif %}</td>
+          <td class="px-3 py-2 text-center">
+            <span class="text-xs px-1.5 py-0.5 rounded bg-{{ dvc }}-950/40 text-{{ dvc }}-300">{{ d.verdict }}</span>
+          </td>
+        </tr>
+        {% if d.notes %}
+          <tr><td colspan="5" class="px-4 py-1 text-xs text-slate-500">{{ d.notes|join('; ') }}</td></tr>
+        {% endif %}
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

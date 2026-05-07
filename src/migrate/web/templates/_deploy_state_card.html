@@ -1,0 +1,20 @@
+{% set sc = {'pending': 'slate', 'provisioning': 'cyan', 'loading': 'cyan', 'uploading_notebook': 'cyan', 'creating_workflow': 'cyan', 'completed': 'emerald', 'failed': 'rose', 'skipped': 'amber'}[state.status] %}
+<div class="bg-ink-900 border border-ink-700 rounded-lg p-4 mt-4">
+  <div class="flex items-center justify-between mb-2">
+    <div>
+      <div class="font-mono text-sm text-slate-200">{{ state.fqn }}</div>
+      <div class="text-xs text-slate-500">→ {{ state.target_fqn }}</div>
+    </div>
+    <span class="text-xs px-2 py-0.5 rounded bg-{{ sc }}-950/40 text-{{ sc }}-300 uppercase tracking-wider">{{ state.status }}</span>
+  </div>
+  {% if state.steps_log %}
+  <ul class="mt-3 space-y-1 text-xs">
+    {% for step in state.steps_log %}
+      <li class="flex items-start gap-2 {% if step.error %}text-rose-300{% else %}text-slate-400{% endif %}">
+        <span class="text-slate-600">•</span>
+        <span>{{ step.step }}{% if step.error %} — {{ step.error }}{% endif %}</span>
+      </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</div>

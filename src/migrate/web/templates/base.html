@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% block title %}migrate{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@2.0.2"></script>
+  <script src="https://unpkg.com/alpinejs@3.14.1/dist/cdn.min.js" defer></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            ink: { 950: '#0b0f17', 900: '#0f1521', 800: '#161e2e', 700: '#1f2a3d', 600: '#2a3852' },
+            accent: { 500: '#22d3ee', 600: '#06b6d4', 700: '#0891b2' },
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+    .nav-link.active { background-color: #1f2a3d; color: #22d3ee; border-left-color: #22d3ee; }
+  </style>
+</head>
+<body class="bg-ink-950 text-slate-200 min-h-screen">
+  <div class="flex min-h-screen">
+    <aside class="w-64 bg-ink-900 border-r border-ink-700 flex flex-col">
+      <div class="px-5 py-5 border-b border-ink-700">
+        <div class="flex items-center gap-2">
+          <div class="w-8 h-8 rounded bg-accent-500 flex items-center justify-center text-ink-950 font-bold">m</div>
+          <div>
+            <div class="font-semibold text-slate-100">migrate</div>
+            <div class="text-xs text-slate-500">GCP → Databricks</div>
+          </div>
+        </div>
+      </div>
+      <nav class="flex-1 py-4">
+        {% set links = [
+          ('connections', '🔌', 'Connections'),
+          ('inventory',   '📋', 'Inventory'),
+          ('lineage',     '🔍', 'Lineage'),
+          ('plan',        '📝', 'Plan Waves'),
+          ('convert',     '🔄', '1. Convert'),
+          ('review',      '👀', '2. Review'),
+          ('deploy',      '🚀', '3. Deploy'),
+          ('validate',    '✅', '4. Validate'),
+          ('docs',        '📚', 'Docs'),
+        ] %}
+        {% for slug, icon, label in links %}
+          <a href="/{{ slug }}"
+             class="nav-link block px-5 py-2.5 text-sm border-l-2 border-transparent hover:bg-ink-800 transition-colors {% if active == slug %}active{% endif %}">
+            <span class="mr-2">{{ icon }}</span>{{ label }}
+          </a>
+        {% endfor %}
+      </nav>
+      <div class="px-5 py-3 border-t border-ink-700 text-xs text-slate-500">
+        v0.1.0 · local-only
+      </div>
+    </aside>
+
+    <main class="flex-1 overflow-auto">
+      <div class="px-10 py-8 max-w-6xl">
+        {% block content %}{% endblock %}
+      </div>
+    </main>
+  </div>
+</body>
+</html>

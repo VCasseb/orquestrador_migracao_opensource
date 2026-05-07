@@ -1,0 +1,50 @@
+{% set state_color = {'pending': 'slate', 'approved': 'emerald', 'rejected': 'rose', 'revoked': 'amber'} %}
+{% set sc = state_color[entry.state.status] %}
+
+<div class="px-6 py-4">
+  <div class="flex items-start justify-between gap-4">
+    <div class="flex-1 min-w-0">
+      <div class="flex items-center gap-3">
+        <span class="text-xs px-2 py-0.5 rounded bg-{{ sc }}-950/40 border border-{{ sc }}-800/40 text-{{ sc }}-300 uppercase tracking-wider">{{ entry.state.status }}</span>
+        <span class="font-mono text-sm text-slate-200 truncate">{{ entry.fqn }}</span>
+      </div>
+      <div class="text-xs text-slate-500 mt-1 flex gap-3 flex-wrap">
+        {% if stage == "conversion" and entry.artifact %}
+          <span>method: <span class="text-slate-300">{{ entry.artifact.method }}</span></span>
+          <span>confidence: <span class="text-slate-300">{{ entry.artifact.confidence }}</span></span>
+          {% if entry.artifact.llm_model_used %}<span>model: <span class="text-slate-300">{{ entry.artifact.llm_model_used }}</span></span>{% endif %}
+          {% if entry.artifact.notes %}<span class="text-amber-400">{{ entry.artifact.notes|length }} note(s)</span>{% endif %}
+        {% elif stage == "validation" and entry.report %}
+          {% set vc = {'pass': 'emerald', 'warn': 'amber', 'fail': 'rose'}[entry.report.verdict] %}
+          <span>verdict: <span class="text-{{ vc }}-400 font-medium">{{ entry.report.verdict|upper }}</span></span>
+          <span>row Δ: <span class="text-slate-300">{{ "%+.2f"|format(entry.report.row_count_diff_pct) }}%</span></span>
+          {% if entry.report.is_synthetic %}<span class="text-purple-400">synthetic</span>{% endif %}
+        {% endif %}
+        {% if entry.state.by %}
+          <span>{{ entry.state.status }} by <span class="text-slate-300">{{ entry.state.by }}</span></span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="flex gap-2 flex-shrink-0">
+      {% if stage == "conversion" %}
+        <a href="/convert/review/{{ entry.fqn }}" class="px-3 py-1.5 text-xs rounded bg-ink-800 border border-ink-700 hover:bg-ink-700">Review diff</a>
+      {% elif stage == "validation" %}
+        <button hx-get="/validate/report/{{ entry.fqn|replace('.', '_') }}" hx-target="#bulk-result" hx-swap="innerHTML"
+                class="px-3 py-1.5 text-xs rounded bg-ink-800 border border-ink-700 hover:bg-ink-700">View</button>
+      {% endif %}
+      {% if entry.state.status != "approved" %}
+        <button hx-post="/review/approve" hx-vals='{"fqn": "{{ entry.fqn }}", "stage": "{{ stage }}"}'
+                hx-target="#card-{{ entry.fqn|replace('.', '_') }}-{{ stage }}" hx-swap="innerHTML"
+                class="px-3 py-1.5 text-xs rounded bg-emerald-700 hover:bg-emerald-600 text-white">Approve</button>
+      {% endif %}
+      {% if entry.state.status != "rejected" %}
+        <button hx-post="/review/reject" hx-vals='{"fqn": "{{ entry.fqn }}", "stage": "{{ stage }}"}'
+                hx-target="#card-{{ entry.fqn|replace('.', '_') }}-{{ stage }}" hx-swap="innerHTML"
+                class="px-3 py-1.5 text-xs rounded bg-ink-800 border border-rose-800/40 hover:bg-rose-950/30 text-rose-300">Reject</button>
+      {% endif %}
+    </div>
+  </div>
+  {% if entry.state.comment %}
+    <div class="mt-2 text-xs text-slate-500 italic">"{{ entry.state.comment }}"</div>
+  {% endif %}
+</div>

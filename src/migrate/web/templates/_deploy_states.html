@@ -1,0 +1,34 @@
+{% if not states %}
+<div class="px-6 py-8 text-center text-slate-500 text-sm">No deployments yet.</div>
+{% else %}
+<table class="w-full text-sm">
+  <thead class="bg-ink-800 text-xs uppercase tracking-wider text-slate-400">
+    <tr>
+      <th class="text-left px-4 py-2.5 font-medium">Source</th>
+      <th class="text-left px-3 py-2.5 font-medium">Target</th>
+      <th class="text-center px-3 py-2.5 font-medium">Status</th>
+      <th class="text-center px-3 py-2.5 font-medium">Mode</th>
+      <th class="text-right px-3 py-2.5 font-medium">Rows</th>
+      <th class="text-left px-3 py-2.5 font-medium">Last step</th>
+    </tr>
+  </thead>
+  <tbody class="divide-y divide-ink-800">
+    {% for s in states %}
+    {% set sc = {'pending': 'slate', 'provisioning': 'cyan', 'loading': 'cyan', 'uploading_notebook': 'cyan',
+                  'creating_workflow': 'cyan', 'completed': 'emerald', 'failed': 'rose', 'skipped': 'amber'}[s.status] %}
+    <tr class="hover:bg-ink-800/50">
+      <td class="px-4 py-2 font-mono text-xs text-slate-300">{{ s.fqn }}</td>
+      <td class="px-3 py-2 font-mono text-xs text-slate-400">{{ s.target_fqn }}</td>
+      <td class="px-3 py-2 text-center">
+        <span class="text-xs px-1.5 py-0.5 rounded bg-{{ sc }}-950/40 text-{{ sc }}-300">{{ s.status }}</span>
+      </td>
+      <td class="px-3 py-2 text-center text-xs text-slate-400">{{ s.mode }}</td>
+      <td class="px-3 py-2 text-right tabular-nums text-slate-400 text-xs">
+        {% if s.rows_loaded %}{{ "{:,}".format(s.rows_loaded) }}{% else %}—{% endif %}
+      </td>
+      <td class="px-3 py-2 text-xs text-slate-400">{{ s.last_step }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}

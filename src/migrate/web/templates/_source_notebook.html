@@ -1,0 +1,90 @@
+<div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-6"
+     onclick="if (event.target === this) this.remove()">
+  <div class="bg-ink-900 border border-ink-700 rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto"
+       onclick="event.stopPropagation()">
+    <div class="px-6 py-4 border-b border-ink-700 flex items-start justify-between">
+      <div>
+        <div class="flex items-center gap-2 text-xs text-amber-400 uppercase tracking-wider">
+          <span>📓</span><span>{{ notebook.kind|replace('_', ' ') }}</span>
+        </div>
+        <h2 class="text-lg font-semibold text-slate-100 mt-1">{{ notebook.name }}</h2>
+        <div class="text-xs text-slate-500 mt-1 font-mono">{{ notebook.location }}</div>
+      </div>
+      <button onclick="this.closest('.fixed').remove()" class="text-slate-500 hover:text-slate-200 text-xl">×</button>
+    </div>
+
+    <div class="px-6 py-4">
+      {% if notebook.description %}
+      <p class="text-sm text-slate-400 mb-4">{{ notebook.description }}</p>
+      {% endif %}
+
+      <div class="grid grid-cols-3 gap-4 text-sm mb-4">
+        <div>
+          <div class="text-xs uppercase tracking-wider text-slate-500">Cells</div>
+          <div class="text-slate-200 mt-1">{{ notebook.cells|length }}</div>
+        </div>
+        <div>
+          <div class="text-xs uppercase tracking-wider text-slate-500">Reads</div>
+          <div class="text-slate-200 mt-1">{{ notebook.all_referenced_tables|length }}</div>
+        </div>
+        <div>
+          <div class="text-xs uppercase tracking-wider text-slate-500">Writes</div>
+          <div class="text-slate-200 mt-1">{{ notebook.all_written_tables|length }}</div>
+        </div>
+      </div>
+
+      {% if notebook.libraries %}
+      <div class="mb-4">
+        <div class="text-xs uppercase tracking-wider text-slate-500 mb-1">Libraries detected (need rewrite on Databricks)</div>
+        <div class="flex flex-wrap gap-1.5">
+          {% for lib in notebook.libraries %}
+            <span class="text-xs px-2 py-0.5 rounded bg-amber-950/40 text-amber-300 font-mono">{{ lib }}</span>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      <h3 class="text-sm font-semibold text-slate-200 mt-3 mb-2">Cells</h3>
+      <div class="space-y-2">
+        {% for cell in notebook.cells %}
+        <div class="bg-ink-800 border border-ink-700 rounded">
+          <div class="px-3 py-1.5 border-b border-ink-700 text-xs text-slate-500 flex items-center justify-between">
+            <span>
+              <span class="font-mono">[{{ loop.index }}]</span>
+              <span class="ml-2 px-1.5 py-0.5 rounded
+                {% if cell.cell_type == 'code' %}bg-cyan-950/40 text-cyan-300
+                {% elif cell.cell_type == 'markdown' %}bg-purple-950/40 text-purple-300
+                {% else %}bg-slate-700 text-slate-300{% endif %}">{{ cell.cell_type }}</span>
+            </span>
+            {% if cell.has_sql %}<span class="text-emerald-400 text-xs">SQL detected</span>{% endif %}
+          </div>
+          <pre class="m-0 p-3 text-xs text-slate-200 overflow-x-auto whitespace-pre">{{ cell.source }}</pre>
+          {% if cell.referenced_tables or cell.writes_tables %}
+          <div class="px-3 py-1.5 border-t border-ink-700 text-xs text-slate-500 space-x-3">
+            {% if cell.referenced_tables %}<span>reads: {% for r in cell.referenced_tables %}<code class="text-slate-300">{{ r }}</code>{% if not loop.last %}, {% endif %}{% endfor %}</span>{% endif %}
+            {% if cell.writes_tables %}<span>writes: {% for w in cell.writes_tables %}<code class="text-cyan-400">{{ w }}</code>{% if not loop.last %}, {% endif %}{% endfor %}</span>{% endif %}
+          </div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+
+      {% if consumers %}
+      <h3 class="text-sm font-semibold text-slate-200 mt-5 mb-2">Tables produced via this notebook ({{ consumers|length }})</h3>
+      <div class="grid grid-cols-1 gap-1">
+        {% for t in consumers %}
+        <div class="bg-ink-800 border border-ink-700 rounded px-3 py-2 text-xs">
+          <code class="text-slate-300">{{ t.fqn }}</code>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      <div class="mt-5 pt-4 border-t border-ink-700 text-xs text-slate-500">
+        Migration: porting Python notebook → Databricks notebook is <strong class="text-amber-400">LLM-assisted</strong>
+        (gera draft trocando <code>google.cloud.bigquery</code> → <code>spark.sql</code>, <code>pandas_gbq.to_gbq</code> → <code>df.write.saveAsTable</code>),
+        <strong>requer revisão humana</strong>.
+      </div>
+    </div>
+  </div>
+</div>

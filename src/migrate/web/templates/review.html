@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Review · migrate{% endblock %}
+{% block content %}
+<div class="mb-6">
+  <h1 class="text-2xl font-semibold text-slate-100">Review queue</h1>
+  <p class="text-slate-400 mt-1 text-sm">
+    Approve, reject, or bulk-approve <strong>conversions</strong> before deploy.
+    Approval is required by <code>migrate deploy --mode execute</code> unless you pass <code>--no-approvals</code>.
+  </p>
+</div>
+
+<div id="bulk-result"></div>
+
+<!-- Conversions -->
+<div class="bg-ink-900 border border-ink-700 rounded-lg overflow-hidden">
+  <div class="px-6 py-3 border-b border-ink-700 flex items-center justify-between">
+    <div>
+      <h2 class="font-semibold text-slate-100">Conversions</h2>
+      <div class="text-xs text-slate-500">
+        {{ conversions|length }} total ·
+        {{ conversions | selectattr('state.status', 'equalto', 'pending') | list | length }} pending ·
+        {{ conversions | selectattr('state.status', 'equalto', 'approved') | list | length }} approved
+      </div>
+    </div>
+    <div class="flex gap-2">
+      <button hx-post="/review/bulk-approve" hx-vals='{"stage": "conversion", "filter": "auto"}'
+              hx-target="#bulk-result" hx-swap="innerHTML"
+              title="sqlglot clean + confidence high + zero notes"
+              class="px-3 py-1.5 text-sm rounded bg-emerald-700 hover:bg-emerald-600 text-white">
+        Approve auto-eligible
+      </button>
+      <button hx-post="/review/bulk-approve" hx-vals='{"stage": "conversion", "filter": "all-pending"}'
+              hx-confirm="Approve ALL pending conversions, including LLM-touched and failed?"
+              hx-target="#bulk-result" hx-swap="innerHTML"
+              class="px-3 py-1.5 text-sm rounded bg-ink-800 border border-amber-700/40 hover:bg-amber-950/30 text-amber-300">
+        Approve all pending
+      </button>
+    </div>
+  </div>
+  <div class="divide-y divide-ink-800">
+    {% for entry in conversions %}
+      {% set stage = "conversion" %}
+      <div id="card-{{ entry.fqn|replace('.', '_') }}-{{ stage }}">{% include "_review_card.html" %}</div>
+    {% else %}
+      <div class="px-6 py-8 text-center text-slate-500 text-sm">No conversions yet. Run <a href="/convert" class="text-accent-500">convert</a> first.</div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,30 @@
+# Credentials — NEVER commit
+.env
+.env.local
+.migrate/credentials/
+*.json.key
+gcp-sa*.json
+
+# Generated artifacts (per-run state)
+.migrate/runs/
+.migrate/reports/
+.migrate/conversions/
+.migrate/inventory.yaml
+.migrate/catalog/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store

@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}Validate · migrate{% endblock %}
+{% block content %}
+<div class="mb-6 flex items-start justify-between">
+  <div>
+    <h1 class="text-2xl font-semibold text-slate-100">Validate</h1>
+    <p class="text-slate-400 mt-1 text-sm">
+      <strong>Step 4 of the migration cycle</strong> — runs <em>after</em> Deploy.
+      Profiles the source on BigQuery and the deployed Delta target side-by-side
+      (row count, NULL drift, distinct count, numeric averages) and produces a diff report
+      with an LLM-generated diagnosis.
+    </p>
+  </div>
+</div>
+
+<div class="grid grid-cols-3 gap-3 mb-4 text-xs">
+  <div class="bg-ink-900 border border-ink-700 rounded-lg p-3">
+    <span class="text-slate-500 uppercase tracking-wider">Pipeline order</span>
+    <div class="text-slate-200 mt-1 font-mono">Convert → Review → Deploy → <span class="text-accent-500">Validate</span></div>
+  </div>
+  <div class="bg-ink-900 border border-ink-700 rounded-lg p-3">
+    <span class="text-slate-500 uppercase tracking-wider">Deployed targets</span>
+    <div class="text-slate-200 mt-1">
+      <span class="text-emerald-400 font-semibold">{{ deployments_count }}</span> /
+      {{ total_count }} tables
+      {% if deployments_count == 0 %}<span class="text-amber-400 ml-2">⚠ deploy something first</span>{% endif %}
+    </div>
+  </div>
+  <div class="bg-ink-900 border border-ink-700 rounded-lg p-3">
+    <span class="text-slate-500 uppercase tracking-wider">Past reports</span>
+    <div class="text-slate-200 mt-1">{{ reports|length }} on disk</div>
+  </div>
+</div>
+
+<div class="bg-ink-900 border border-ink-700 rounded-lg p-5 mb-6">
+  <h2 class="font-semibold text-slate-200 mb-3">Run a validation</h2>
+  {% if not inv %}
+    <p class="text-sm text-slate-400">Run a <a href="/inventory" class="text-accent-500 hover:underline">scan</a> first.</p>
+  {% elif deployments_count == 0 %}
+    <div class="bg-amber-950/20 border border-amber-800/30 rounded p-4 text-center">
+      <div class="text-3xl mb-2 opacity-60">🚀</div>
+      <h3 class="text-base font-semibold text-amber-200">No tables deployed yet</h3>
+      <p class="text-sm text-amber-200/80 mt-1">
+        Validation compares the deployed Delta target with the BQ source — there's nothing to compare yet.
+        Run <a href="/deploy" class="text-accent-500 hover:underline">Deploy</a> first.
+      </p>
+    </div>
+  {% else %}
+  {% set deployed_tables = inv.tables | selectattr('fqn', 'in', deployed_fqns) | list %}
+  <form hx-post="/validate/run" hx-target="#run-result" hx-swap="innerHTML" hx-indicator="#run-indicator"
+        class="grid grid-cols-12 gap-3 items-end">
+    <div class="col-span-6">
+      <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">
+        Source table (BQ FQN) — only deployed targets shown
+      </label>
+      <select name="fqn" class="w-full bg-ink-800 border border-ink-700 rounded px-3 py-2 text-sm">
+        {% for t in deployed_tables %}
+          <option value="{{ t.fqn }}" {% if t.fqn in selected %}selected{% endif %}>
+            ✓ {{ t.fqn }}
+          </option>
+        {% endfor %}
+      </select>
+      <div class="text-xs text-slate-500 mt-1">
+        Showing {{ deployed_tables|length }} deployed table(s). Not deployed yet?
+        <a href="/deploy" class="text-accent-500 hover:underline">Deploy first</a>.
+      </div>
+    </div>
+    <div class="col-span-3">
+      <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">Mode</label>
+      <select name="mode" class="w-full bg-ink-800 border border-ink-700 rounded px-3 py-2 text-sm">
+        <option value="real">Real (BQ ↔ Delta)</option>
+        <option value="sample">Synthetic (no connection)</option>
+      </select>
+    </div>
+    <div class="col-span-3 flex items-center gap-3">
+      <button class="px-4 py-2 text-sm rounded bg-accent-600 hover:bg-accent-700 text-ink-950 font-medium w-full">Run validation</button>
+      <span id="run-indicator" class="htmx-indicator text-xs text-accent-500">Running…</span>
+    </div>
+  </form>
+  {% endif %}
+</div>
+
+<div id="run-result"></div>
+
+{% if reports %}
+<div class="mt-8 bg-ink-900 border border-ink-700 rounded-lg overflow-hidden">
+  <div class="px-6 py-3 border-b border-ink-700">
+    <h2 class="font-semibold text-slate-100">Past reports</h2>
+  </div>
+  <div class="divide-y divide-ink-800">
+    {% for p in reports %}
+    <div class="px-6 py-3 flex items-center justify-between">
+      <div class="font-mono text-sm text-slate-300">{{ p.stem.replace('_', '.') }}</div>
+      <button hx-get="/validate/report/{{ p.stem }}" hx-target="#run-result" hx-swap="innerHTML"
+              class="px-3 py-1.5 text-sm rounded bg-ink-800 border border-ink-700 hover:bg-ink-700">View</button>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<style>
+  .htmx-indicator { opacity: 0; transition: opacity 200ms; }
+  .htmx-request .htmx-indicator { opacity: 1; }
+</style>
+{% endblock %}

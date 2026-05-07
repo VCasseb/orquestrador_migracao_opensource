@@ -1,0 +1,19 @@
+<div class="text-sm">
+  {% if result.ok %}
+    <div class="flex items-center gap-2 text-emerald-400">
+      <span>✓</span>
+      <span>{{ result.message }}</span>
+      {% if result.detail %}<span class="text-slate-500">— {{ result.detail }}</span>{% endif %}
+    </div>
+  {% else %}
+    <div class="flex items-start gap-2 text-rose-400">
+      <span>✗</span>
+      <div>
+        <div>{{ result.message }}</div>
+        {% if result.detail %}
+          <div class="text-xs text-slate-500 mt-1 font-mono">{{ result.detail[:300] }}</div>
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+</div>

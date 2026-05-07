@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Docs · migrate{% endblock %}
+{% block content %}
+<div class="mb-6">
+  <h1 class="text-2xl font-semibold text-slate-100">Docs</h1>
+  <p class="text-slate-400 mt-1 text-sm">
+    Per-table Markdown formatted for Azure DevOps Wiki. Generated from inventory + conversion + validation + audit log.
+    Includes lineage diagram (mermaid), schema diff, conversion notes, validation table, approvals, and action history.
+  </p>
+</div>
+
+<div class="bg-ink-900 border border-ink-700 rounded-lg p-5 mb-6">
+  <h2 class="font-semibold text-slate-200 mb-3">Generate doc</h2>
+  {% if not inv %}
+    <p class="text-sm text-slate-400">Run a <a href="/inventory" class="text-accent-500 hover:underline">scan</a> first.</p>
+  {% elif deployed_fqns|length == 0 %}
+    <div class="bg-amber-950/20 border border-amber-800/30 rounded p-4 text-center">
+      <div class="text-3xl mb-2 opacity-60">🚀</div>
+      <h3 class="text-base font-semibold text-amber-200">No tables deployed yet</h3>
+      <p class="text-sm text-amber-200/80 mt-1">
+        Docs document the migrated state — generated only for tables that have been deployed.
+        Run <a href="/deploy" class="text-accent-500 hover:underline">Deploy</a> first.
+      </p>
+    </div>
+  {% else %}
+  {% set deployed_tables = inv.tables | selectattr('fqn', 'in', deployed_fqns) | list %}
+  <form hx-post="/docs/generate" hx-target="#doc-result" hx-swap="innerHTML"
+        class="grid grid-cols-12 gap-3 items-end">
+    <div class="col-span-9">
+      <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">
+        Deployed table — pick one ({{ deployed_tables|length }} available)
+      </label>
+      <select name="fqn" class="w-full bg-ink-800 border border-ink-700 rounded px-3 py-2 text-sm">
+        {% for t in deployed_tables %}
+          <option value="{{ t.fqn }}">✓ {{ t.fqn }}</option>
+        {% endfor %}
+      </select>
+      <div class="text-xs text-slate-500 mt-1">
+        Other tables not listed because they haven't been deployed.
+        <a href="/deploy" class="text-accent-500 hover:underline">Deploy more</a> to add them.
+      </div>
+    </div>
+    <div class="col-span-3">
+      <button class="px-4 py-2 text-sm rounded bg-accent-600 hover:bg-accent-700 text-ink-950 font-medium w-full">Generate</button>
+    </div>
+  </form>
+  {% endif %}
+</div>
+
+<div id="doc-result"></div>
+
+{% if existing %}
+<div class="mt-8 bg-ink-900 border border-ink-700 rounded-lg overflow-hidden">
+  <div class="px-6 py-3 border-b border-ink-700">
+    <h2 class="font-semibold text-slate-100">Generated docs</h2>
+  </div>
+  <div class="divide-y divide-ink-800">
+    {% for p in existing %}
+    <div class="px-6 py-3 flex items-center justify-between">
+      <div class="font-mono text-sm text-slate-300">{{ p.stem.replace('_', '.') }}</div>
+      <button hx-get="/docs/view/{{ p.stem }}" hx-target="#doc-result" hx-swap="innerHTML"
+              class="px-3 py-1.5 text-sm rounded bg-ink-800 border border-ink-700 hover:bg-ink-700">View</button>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}

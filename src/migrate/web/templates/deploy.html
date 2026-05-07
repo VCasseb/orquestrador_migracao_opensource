@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Deploy · migrate{% endblock %}
+{% block content %}
+<div class="mb-6">
+  <h1 class="text-2xl font-semibold text-slate-100">Deploy</h1>
+  <p class="text-slate-400 mt-1 text-sm">
+    Provision Delta tables, load data, upload notebooks, and (optionally) create Workflows. Runs waves serially; tables within a wave run in parallel up to <code>--concurrency</code>.
+  </p>
+</div>
+
+<div class="bg-ink-900 border border-ink-700 rounded-lg p-5 mb-6">
+  <h2 class="font-semibold text-slate-200 mb-3">Deploy a plan</h2>
+  {% if not plans %}
+    <p class="text-sm text-slate-400">No plans yet. Build one in <a href="/plan" class="text-accent-500 hover:underline">Plan Waves</a>.</p>
+  {% else %}
+  <form hx-post="/deploy/plan" hx-target="#deploy-result" hx-swap="innerHTML" hx-indicator="#deploy-indicator"
+        class="grid grid-cols-12 gap-3 items-end">
+    <div class="col-span-4">
+      <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">Plan</label>
+      <select name="plan_name" class="w-full bg-ink-800 border border-ink-700 rounded px-3 py-2 text-sm">
+        {% for p in plans %}<option value="{{ p.stem }}">{{ p.stem }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-span-2">
+      <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">Mode</label>
+      <select name="mode" class="w-full bg-ink-800 border border-ink-700 rounded px-3 py-2 text-sm">
+        <option value="sample">Sample (simulated)</option>
+        <option value="dry-run">Dry-run</option>
+        <option value="execute">Execute (real)</option>
+      </select>
+    </div>
+    <div class="col-span-2">
+      <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">Concurrency</label>
+      <input type="number" name="concurrency" value="4" min="1" max="32"
+             class="w-full bg-ink-800 border border-ink-700 rounded px-3 py-2 text-sm" />
+    </div>
+    <div class="col-span-4 flex flex-wrap gap-3 items-end pb-1">
+      <label class="flex items-center gap-1.5 text-sm text-slate-400">
+        <input type="checkbox" name="require_approvals" value="1" checked class="accent-accent-500" />
+        Require approvals
+      </label>
+      <label class="flex items-center gap-1.5 text-sm text-slate-400">
+        <input type="checkbox" name="create_workflow" value="1" class="accent-accent-500" />
+        Create Workflow
+      </label>
+      <label class="flex items-center gap-1.5 text-sm text-slate-400">
+        <input type="checkbox" name="stop_on_failure" value="1" class="accent-accent-500" />
+        Stop on failure
+      </label>
+      <label class="flex items-center gap-1.5 text-sm text-slate-400" title="Run BQ↔Delta diff immediately after each table deploys">
+        <input type="checkbox" name="auto_validate" value="1" class="accent-accent-500" />
+        Auto-validate after deploy
+      </label>
+    </div>
+    <div class="col-span-12 flex items-center gap-3">
+      <button class="px-4 py-2 text-sm rounded bg-accent-600 hover:bg-accent-700 text-ink-950 font-medium">Run deploy</button>
+      <span id="deploy-indicator" class="htmx-indicator text-xs text-accent-500">Running...</span>
+      <span class="text-xs text-slate-500 ml-auto">Tip: start with <span class="text-accent-500">Sample</span> to see the flow without touching real systems.</span>
+    </div>
+  </form>
+  {% endif %}
+</div>
+
+<div id="deploy-result"></div>
+
+{% if states %}
+<div class="bg-ink-900 border border-ink-700 rounded-lg overflow-hidden mt-8">
+  <div class="px-6 py-3 border-b border-ink-700 flex items-center justify-between">
+    <h2 class="font-semibold text-slate-100">Deployment states</h2>
+    <button hx-get="/deploy/states" hx-target="#states-list" hx-swap="innerHTML"
+            class="px-2 py-1 text-xs rounded bg-ink-800 border border-ink-700 hover:bg-ink-700">Refresh</button>
+  </div>
+  <div id="states-list">
+    {% include "_deploy_states.html" %}
+  </div>
+</div>
+{% endif %}
+
+<style>
+  .htmx-indicator { opacity: 0; transition: opacity 200ms; }
+  .htmx-request .htmx-indicator { opacity: 1; }
+</style>
+{% endblock %}

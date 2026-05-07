@@ -1,0 +1,183 @@
+from __future__ import annotations
+
+from fastapi import FastAPI, Form, Request
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
+
+from migrate.core.inventory.catalog import load_inventory, save_inventory
+from migrate.core.inventory.models import Inventory
+from migrate.core.inventory.scanner import run_scan
+from migrate.core.state.selection import load_selection, toggle
+
+
+def _humanize_bytes(b: int | None) -> str:
+    if not b:
+        return "—"
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if b < 1024:
+            return f"{b:.0f}{unit}" if unit == "B" else f"{b:.1f}{unit}"
+        b /= 1024
+    return f"{b:.1f}PB"
+
+
+def _humanize_count(n: int | None) -> str:
+    if n is None:
+        return "—"
+    if n >= 1_000_000_000:
+        return f"{n / 1_000_000_000:.1f}B"
+    if n >= 1_000_000:
+        return f"{n / 1_000_000:.1f}M"
+    if n >= 1_000:
+        return f"{n / 1_000:.1f}K"
+    return str(n)
+
+
+def attach(app: FastAPI, templates: Jinja2Templates) -> None:
+
+    @app.get("/inventory", response_class=HTMLResponse)
+    def inventory_page(request: Request):
+        inv = load_inventory()
+        selected = load_selection()
+        return templates.TemplateResponse(
+            request,
+            "inventory.html",
+            {
+                "active": "inventory",
+                "inv": inv,
+                "selected": selected,
+                "humanize_bytes": _humanize_bytes,
+                "humanize_count": _humanize_count,
+            },
+        )
+
+    @app.post("/inventory/scan")
+    def inventory_scan(request: Request, source: str = Form("auto")):
+        use_sample = source == "sample"
+        if source == "auto":
+            from migrate.core.credentials import get_env, load_env
+            load_env()
+            use_sample = not get_env("GCP_PROJECT_IDS")
+        try:
+            inv = run_scan(use_sample=use_sample)
+            save_inventory(inv)
+            error: str | None = None
+        except Exception as e:
+            inv = load_inventory() or Inventory(scanned_at=__import__("datetime").datetime.now(), projects=[], tables=[])
+            error = str(e)
+
+        return templates.TemplateResponse(
+            request,
+            "_inventory_table.html",
+            {
+                "inv": inv,
+                "selected": load_selection(),
+                "error": error,
+                "humanize_bytes": _humanize_bytes,
+                "humanize_count": _humanize_count,
+                "filter": {},
+            },
+        )
+
+    @app.post("/inventory/filter")
+    def inventory_filter(
+        request: Request,
+        project: str = Form(""),
+        type: str = Form(""),
+        complexity: str = Form(""),
+        heat: str = Form(""),
+        source_kind: str = Form(""),
+        search: str = Form(""),
+    ):
+        inv = load_inventory()
+        return templates.TemplateResponse(
+            request,
+            "_inventory_table.html",
+            {
+                "inv": inv,
+                "selected": load_selection(),
+                "humanize_bytes": _humanize_bytes,
+                "humanize_count": _humanize_count,
+                "filter": {
+                    "project": project or None,
+                    "type": type or None,
+                    "complexity": complexity or None,
+                    "heat": heat or None,
+                    "source_kind": source_kind or None,
+                    "search": search or None,
+                },
+            },
+        )
+
+    @app.post("/inventory/select/{fqn}")
+    def inventory_select(request: Request, fqn: str):
+        chosen = toggle(fqn)
+        return templates.TemplateResponse(
+            request,
+            "_select_button.html",
+            {"fqn": fqn, "chosen": chosen},
+        )
+
+    @app.get("/inventory/detail/{fqn}")
+    def inventory_detail(request: Request, fqn: str):
+        inv = load_inventory()
+        if not inv:
+            return HTMLResponse("<div class='p-4 text-rose-400'>No inventory loaded.</div>")
+        table = inv.by_fqn.get(fqn)
+        if not table:
+            return HTMLResponse(f"<div class='p-4 text-rose-400'>Not found: {fqn}</div>")
+        return templates.TemplateResponse(
+            request,
+            "_table_detail.html",
+            {
+                "table": table,
+                "humanize_bytes": _humanize_bytes,
+                "humanize_count": _humanize_count,
+            },
+        )
+
+    @app.get("/inventory/source/{kind}/{name:path}")
+    def inventory_source_detail(request: Request, kind: str, name: str):
+        inv = load_inventory()
+        if not inv:
+            return HTMLResponse("<div class='p-4 text-rose-400'>No inventory loaded.</div>")
+
+        if kind == "dag":
+            dag = inv.dags_by_id.get(name)
+            if not dag:
+                return HTMLResponse(
+                    f"<div class='p-4 text-rose-400'>DAG <code>{name}</code> not in scanned set. "
+                    f"Configure <code>GCP_COMPOSER_DAG_BUCKET</code> and rescan.</div>"
+                )
+            consumers = [t for t in inv.tables
+                         if t.source_dag_id == name or name in (t.source_dag_id or "")]
+            return templates.TemplateResponse(
+                request, "_source_dag.html",
+                {"dag": dag, "consumers": consumers},
+            )
+
+        if kind == "notebook":
+            nb = inv.notebooks_by_id.get(name)
+            if not nb:
+                return HTMLResponse(
+                    f"<div class='p-4 text-rose-400'>Notebook <code>{name}</code> not scanned. "
+                    f"Configure <code>GCP_NOTEBOOKS_BUCKET</code>.</div>"
+                )
+            consumers = [t for t in inv.tables if t.source_notebook_id == name]
+            return templates.TemplateResponse(
+                request, "_source_notebook.html",
+                {"notebook": nb, "consumers": consumers},
+            )
+
+        if kind == "sq":
+            sq = next((s for s in inv.scheduled_queries if s.name == name), None)
+            if not sq:
+                return HTMLResponse(
+                    f"<div class='p-4 text-rose-400'>Scheduled query <code>{name}</code> not found.</div>"
+                )
+            consumers = [t for t in inv.tables if t.source_scheduled_query_id == name]
+            return templates.TemplateResponse(
+                request, "_source_sq.html",
+                {"sq": sq, "consumers": consumers},
+            )
+
+        return HTMLResponse(f"<div class='p-4 text-rose-400'>Unknown source kind: {kind}</div>")

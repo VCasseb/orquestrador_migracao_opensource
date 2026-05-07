@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Convert · migrate{% endblock %}
+{% block content %}
+<div class="mb-6">
+  <h1 class="text-2xl font-semibold text-slate-100">Convert</h1>
+  <p class="text-slate-400 mt-1 text-sm">
+    Transpile BigQuery SQL → Databricks SQL via sqlglot, fall back to Claude when needed,
+    generate Delta DDL, and render a notebook from the standard template.
+    Artifacts go to <code class="text-accent-500">.migrate/conversions/</code>.
+  </p>
+</div>
+
+<div class="bg-ink-900 border border-ink-700 rounded-lg p-5 mb-6">
+  <h2 class="font-semibold text-slate-200 mb-3">Convert a table</h2>
+  {% if not inv %}
+    <p class="text-sm text-slate-400">Run a <a href="/inventory" class="text-accent-500 hover:underline">scan</a> first.</p>
+  {% else %}
+  <form hx-post="/convert/run" hx-target="#conv-result" hx-swap="innerHTML" hx-indicator="#conv-indicator"
+        class="grid grid-cols-12 gap-3 items-end">
+    <div class="col-span-7">
+      <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">Source object (BQ FQN)</label>
+      <select name="fqn" class="w-full bg-ink-800 border border-ink-700 rounded px-3 py-2 text-sm">
+        {% for t in inv.tables %}
+          <option value="{{ t.fqn }}" {% if t.fqn in selected %}selected{% endif %}>{{ t.fqn }} ({{ t.type }})</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-span-3">
+      <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">LLM fallback</label>
+      <label class="flex items-center gap-2 px-3 py-2 bg-ink-800 border border-ink-700 rounded text-sm">
+        <input type="checkbox" name="use_llm" value="1" checked class="accent-accent-500" />
+        Enable Claude when sqlglot fails
+      </label>
+    </div>
+    <div class="col-span-2 flex items-center gap-2">
+      <button class="px-4 py-2 text-sm rounded bg-accent-600 hover:bg-accent-700 text-ink-950 font-medium w-full">Convert</button>
+      <span id="conv-indicator" class="htmx-indicator text-xs text-accent-500">…</span>
+    </div>
+  </form>
+  {% endif %}
+</div>
+
+<div id="conv-result"></div>
+
+{% if existing %}
+<div class="mt-8 bg-ink-900 border border-ink-700 rounded-lg overflow-hidden">
+  <div class="px-6 py-3 border-b border-ink-700">
+    <h2 class="font-semibold text-slate-100">Past conversions</h2>
+  </div>
+  <div class="divide-y divide-ink-800">
+    {% for p in existing %}
+      {% set fqn_dotted = p.stem.replace('_', '.').replace('.meta', '') %}
+    <div class="px-6 py-3 flex items-center justify-between">
+      <div class="font-mono text-sm text-slate-300">{{ fqn_dotted }}</div>
+      <button hx-get="/convert/view/{{ fqn_dotted }}" hx-target="#conv-result" hx-swap="innerHTML"
+              class="px-3 py-1.5 text-sm rounded bg-ink-800 border border-ink-700 hover:bg-ink-700">View</button>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<style>
+  .htmx-indicator { opacity: 0; transition: opacity 200ms; }
+  .htmx-request .htmx-indicator { opacity: 1; }
+</style>
+
+<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.50.0/min/vs/loader.js"></script>
+<script>
+  require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.50.0/min/vs' } });
+  // Pre-warm Monaco so the partial loads instantly when injected.
+  require(['vs/editor/editor.main'], function () { window.__monacoReady = true; });
+
+  // Helper called by injected conversion-result partials to mount the diff editor.
+  window.mountConvertDiff = function (containerId, original, modified) {
+    const tryMount = () => {
+      if (!window.__monacoReady) { setTimeout(tryMount, 80); return; }
+      const el = document.getElementById(containerId);
+      if (!el) return;
+      el.innerHTML = '';
+      const o = monaco.editor.createModel(original || '', 'sql');
+      const m = monaco.editor.createModel(modified || '', 'sql');
+      const ed = monaco.editor.createDiffEditor(el, {
+        automaticLayout: true,
+        readOnly: true,
+        theme: 'vs-dark',
+        renderSideBySide: true,
+        fontSize: 12,
+        lineNumbers: 'on',
+        minimap: { enabled: false },
+      });
+      ed.setModel({ original: o, modified: m });
+    };
+    tryMount();
+  };
+</script>
+{% endblock %}

@@ -1,0 +1,48 @@
+<div class="bg-ink-900 border border-ink-700 rounded-lg overflow-hidden">
+  <div class="px-6 py-4 border-b border-ink-700 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-2 h-2 rounded-full {% if state.anthropic.has_key %}bg-emerald-500{% else %}bg-slate-600{% endif %}"></div>
+      <h2 class="font-semibold text-slate-100">Anthropic <span class="text-xs text-slate-500 font-normal">(LLM fallback for SQL conversion)</span></h2>
+    </div>
+    {% if result and result.saved %}<span class="text-xs text-emerald-400">Saved</span>{% endif %}
+  </div>
+  <form class="px-6 py-5 space-y-4"
+        hx-post="/connections/anthropic/save"
+        hx-target="#card-anthropic"
+        hx-swap="innerHTML">
+    <div>
+      <label class="block text-sm text-slate-400 mb-1">
+        API Key
+        {% if state.anthropic.has_key %}
+          <span class="text-slate-500 font-normal">(currently {{ state.anthropic.api_key_masked }} — leave empty to keep)</span>
+        {% endif %}
+      </label>
+      <input type="password" name="anthropic_api_key"
+             placeholder="{% if state.anthropic.has_key %}••••••••{% else %}sk-ant-…{% endif %}"
+             class="w-full bg-ink-800 border border-ink-700 rounded px-3 py-2 text-sm focus:border-accent-500 focus:outline-none" />
+    </div>
+    <div>
+      <label class="block text-sm text-slate-400 mb-1">Default model</label>
+      <select name="anthropic_model"
+              class="w-full bg-ink-800 border border-ink-700 rounded px-3 py-2 text-sm focus:border-accent-500 focus:outline-none">
+        {% for m in ["claude-sonnet-4-6", "claude-opus-4-7", "claude-haiku-4-5-20251001"] %}
+          <option value="{{ m }}" {% if state.anthropic.model == m %}selected{% endif %}>{{ m }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="flex items-center gap-3 pt-2">
+      <button type="button"
+              hx-post="/connections/anthropic/test"
+              hx-target="#test-result-anthropic"
+              hx-swap="innerHTML"
+              class="px-4 py-2 text-sm rounded bg-ink-800 border border-ink-700 hover:bg-ink-700 hover:border-accent-600 transition-colors">
+        Test connection
+      </button>
+      <button type="submit"
+              class="px-4 py-2 text-sm rounded bg-accent-600 hover:bg-accent-700 text-ink-950 font-medium transition-colors">
+        Save
+      </button>
+      <div id="test-result-anthropic" class="flex-1"></div>
+    </div>
+  </form>
+</div>

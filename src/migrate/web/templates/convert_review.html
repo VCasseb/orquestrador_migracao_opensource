@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Review: {{ artifact.fqn }} · migrate{% endblock %}
+{% block content %}
+{% set state_color = {'pending': 'slate', 'approved': 'emerald', 'rejected': 'rose', 'revoked': 'amber'} %}
+{% set sc = state_color[state.status] %}
+
+<div class="mb-6 flex items-start justify-between">
+  <div>
+    <div class="text-xs text-slate-500"><a href="/convert" class="hover:text-accent-500">← convert</a></div>
+    <h1 class="text-2xl font-semibold text-slate-100 font-mono mt-1">{{ artifact.fqn }}</h1>
+    <div class="text-sm text-slate-400 mt-1">
+      method: <span class="text-slate-200">{{ artifact.method }}</span> ·
+      confidence: <span class="text-slate-200">{{ artifact.confidence }}</span>
+      {% if artifact.llm_model_used %}· model: <span class="text-slate-200">{{ artifact.llm_model_used }}</span>{% endif %}
+    </div>
+  </div>
+  <div class="flex items-center gap-3">
+    <span class="text-xs px-3 py-1 rounded bg-{{ sc }}-950/40 border border-{{ sc }}-800/40 text-{{ sc }}-300 uppercase tracking-wider">{{ state.status }}</span>
+    {% if state.status != 'approved' %}
+    <button hx-post="/review/approve" hx-vals='{"fqn": "{{ artifact.fqn }}", "stage": "conversion"}'
+            hx-target="#approval-result" hx-swap="innerHTML"
+            class="px-4 py-2 text-sm rounded bg-emerald-700 hover:bg-emerald-600 text-white">Approve</button>
+    {% endif %}
+    {% if state.status != 'rejected' %}
+    <button hx-post="/review/reject" hx-vals='{"fqn": "{{ artifact.fqn }}", "stage": "conversion"}'
+            hx-target="#approval-result" hx-swap="innerHTML"
+            class="px-4 py-2 text-sm rounded bg-ink-800 border border-rose-800/40 hover:bg-rose-950/30 text-rose-300">Reject</button>
+    {% endif %}
+  </div>
+</div>
+
+<div id="approval-result" class="mb-4"></div>
+
+{% if artifact.notes %}
+<div class="mb-4 px-4 py-3 bg-amber-950/20 border border-amber-800/30 rounded-lg">
+  <div class="text-xs uppercase tracking-wider text-amber-400 mb-1">What changed</div>
+  <ul class="text-sm text-amber-200 space-y-0.5">
+    {% for n in artifact.notes %}<li>· {{ n }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<div class="bg-ink-900 border border-ink-700 rounded-lg overflow-hidden">
+  <div class="px-6 py-3 border-b border-ink-700 text-sm">
+    <span class="text-slate-500">SQL diff</span> ·
+    <span class="text-slate-400">left = BigQuery (source)</span> ·
+    <span class="text-slate-400">right = Databricks (converted)</span>
+  </div>
+  <div id="sql-diff" style="height: 60vh;"></div>
+</div>
+
+<div class="grid grid-cols-2 gap-4 mt-4">
+  <div class="bg-ink-900 border border-ink-700 rounded-lg overflow-hidden">
+    <div class="px-4 py-2 border-b border-ink-700 text-sm text-slate-400">Delta DDL</div>
+    <pre class="bg-ink-800 m-0 p-3 text-xs text-slate-200 overflow-x-auto whitespace-pre">{{ artifact.ddl }}</pre>
+  </div>
+  <div class="bg-ink-900 border border-ink-700 rounded-lg overflow-hidden">
+    <div class="px-4 py-2 border-b border-ink-700 text-sm text-slate-400">Generated notebook ({{ artifact.notebook_path or "—" }})</div>
+    {% if artifact.notebook_path %}
+      <pre class="bg-ink-800 m-0 p-3 text-xs text-slate-200 overflow-x-auto whitespace-pre max-h-[40vh]" id="notebook-pre">…loading…</pre>
+      <script>
+        fetch('/convert/raw-notebook?fqn={{ artifact.fqn }}').then(r => r.text()).then(t => {
+          document.getElementById('notebook-pre').textContent = t;
+        });
+      </script>
+    {% else %}
+      <div class="p-3 text-sm text-slate-500">No notebook (table-only conversion).</div>
+    {% endif %}
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.50.0/min/vs/loader.js"></script>
+<script>
+  const SOURCE_SQL = {{ (table.view_query or "")|tojson }};
+  const TARGET_SQL = {{ (artifact.converted_sql or "")|tojson }};
+
+  require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.50.0/min/vs' } });
+  require(['vs/editor/editor.main'], function () {
+    const original = monaco.editor.createModel(SOURCE_SQL, 'sql');
+    const modified = monaco.editor.createModel(TARGET_SQL, 'sql');
+    const diffEditor = monaco.editor.createDiffEditor(document.getElementById('sql-diff'), {
+      automaticLayout: true,
+      readOnly: true,
+      theme: 'vs-dark',
+      renderSideBySide: true,
+      fontSize: 13,
+      lineNumbers: 'on',
+      minimap: { enabled: false },
+    });
+    diffEditor.setModel({ original, modified });
+  });
+</script>
+{% endblock %}

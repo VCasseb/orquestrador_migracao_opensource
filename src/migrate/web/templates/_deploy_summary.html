@@ -1,0 +1,32 @@
+<div class="bg-ink-900 border border-ink-700 rounded-lg overflow-hidden mt-4">
+  <div class="px-6 py-3 border-b border-ink-700 flex items-center justify-between">
+    <div>
+      <h3 class="font-semibold text-slate-100">Deploy result: {{ summary.plan }}</h3>
+      <div class="text-xs text-slate-500">mode: {{ summary.mode }}{% if summary.aborted_after_wave %} · aborted after wave {{ summary.aborted_after_wave }}{% endif %}</div>
+    </div>
+  </div>
+  <div class="divide-y divide-ink-800">
+    {% for w in summary.waves %}
+    <div class="px-6 py-4">
+      <div class="flex items-center gap-3 mb-2">
+        <div class="w-7 h-7 rounded-full bg-accent-600 text-ink-950 font-bold flex items-center justify-center text-xs">{{ w.index }}</div>
+        <div class="font-semibold text-slate-200">Wave {{ w.index }}</div>
+        <div class="text-xs text-slate-500">
+          <span class="text-emerald-400">{{ w.ok }} ok</span> ·
+          <span class="text-amber-400">{{ w.skipped }} skipped</span> ·
+          <span class="text-rose-400">{{ w.failed }} failed</span>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-1.5">
+        {% for t in w.tables %}
+          {% set tc = {'completed': 'emerald', 'failed': 'rose', 'skipped': 'amber', 'pending': 'slate'}[t.status] %}
+          <div class="text-xs px-2 py-1.5 rounded bg-ink-800 border border-{{ tc }}-800/30 flex items-center justify-between">
+            <span class="font-mono text-slate-300">{{ t.fqn }}</span>
+            <span class="text-{{ tc }}-300">{{ t.status }}{% if t.rows %} · {{ "{:,}".format(t.rows) }} rows{% endif %}</span>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>

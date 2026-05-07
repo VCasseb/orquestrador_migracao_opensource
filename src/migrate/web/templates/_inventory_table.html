@@ -1,0 +1,115 @@
+{% if error %}
+  <div class="mb-4 p-3 rounded bg-rose-950/40 border border-rose-800/40 text-rose-300 text-sm">
+    {{ error }}
+  </div>
+{% endif %}
+
+{% if not inv or not inv.tables %}
+  <div class="bg-ink-900 border border-ink-700 rounded-lg p-12 text-center">
+    <div class="text-4xl mb-3 opacity-40">📋</div>
+    <h2 class="text-lg font-semibold text-slate-200">No tables yet</h2>
+    <p class="text-slate-500 mt-2">Click <span class="text-accent-500">Scan now</span> to read from configured GCP projects, or <span class="text-accent-500">Load sample data</span> to explore the framework with synthetic data.</p>
+  </div>
+{% else %}
+  {% set f = filter or {} %}
+  {% set rows = inv.filter(project=f.get('project'), type=f.get('type'), complexity=f.get('complexity'), heat=f.get('heat'), source_kind=f.get('source_kind'), search=f.get('search')) %}
+  {% set src_icon = {
+    'view': ('🔷', 'view'),
+    'scheduled_query': ('⏱', 'sched query'),
+    'dag_sql': ('🟩', 'DAG SQL'),
+    'dag_python': ('🐍', 'DAG Python'),
+    'dag_notebook': ('🟧', 'DAG → notebook'),
+    'notebook': ('📓', 'notebook'),
+    'manual': ('🖐', 'manual'),
+    'unknown': ('—', 'unknown'),
+  } %}
+  <div class="bg-ink-900 border border-ink-700 rounded-lg overflow-hidden">
+    <div class="px-4 py-2 border-b border-ink-700 text-xs text-slate-500">
+      Showing <span class="text-slate-200">{{ rows|length }}</span> of {{ inv.tables|length }} objects
+      {% if selected %}· <span class="text-accent-500">{{ selected|length }} selected</span>{% endif %}
+    </div>
+    <table class="w-full text-sm">
+      <thead class="bg-ink-800 text-xs uppercase tracking-wider text-slate-400">
+        <tr>
+          <th class="text-left px-4 py-2.5 font-medium">Object</th>
+          <th class="text-left px-3 py-2.5 font-medium">Type</th>
+          <th class="text-left px-3 py-2.5 font-medium">Source</th>
+          <th class="text-right px-3 py-2.5 font-medium">Rows</th>
+          <th class="text-right px-3 py-2.5 font-medium">Size</th>
+          <th class="text-center px-3 py-2.5 font-medium">Complexity</th>
+          <th class="text-center px-3 py-2.5 font-medium">Heat</th>
+          <th class="text-right px-3 py-2.5 font-medium">Plan</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-ink-800">
+        {% for t in rows %}
+        <tr class="hover:bg-ink-800/50 transition-colors">
+          <td class="px-4 py-2">
+            <button class="text-left hover:text-accent-500 transition-colors"
+                    hx-get="/inventory/detail/{{ t.fqn }}"
+                    hx-target="#detail-modal"
+                    hx-swap="innerHTML">
+              <span class="text-slate-500">{{ t.project }}.{{ t.dataset }}.</span><span class="text-slate-100">{{ t.name }}</span>
+            </button>
+          </td>
+          <td class="px-3 py-2">
+            <span class="text-xs px-1.5 py-0.5 rounded
+              {% if t.type == 'TABLE' %}bg-cyan-950/40 text-cyan-300
+              {% elif t.type == 'VIEW' %}bg-purple-950/40 text-purple-300
+              {% elif t.type == 'MATERIALIZED_VIEW' %}bg-pink-950/40 text-pink-300
+              {% else %}bg-slate-800 text-slate-400{% endif %}">{{ t.type }}</span>
+          </td>
+          <td class="px-3 py-2">
+            {% set icon, label = src_icon.get(t.source_kind, ('—', t.source_kind)) %}
+            {% if t.source_kind in ('dag_sql', 'dag_python', 'dag_notebook') and t.source_dag_id %}
+              <button class="text-xs text-emerald-400 hover:text-emerald-300 hover:underline"
+                      hx-get="/inventory/source/dag/{{ t.source_dag_id }}"
+                      hx-target="#detail-modal"
+                      hx-swap="innerHTML"
+                      title="Open DAG: {{ t.source_dag_id }}">{{ icon }} {{ label }} →</button>
+            {% elif t.source_kind == 'notebook' and t.source_notebook_id %}
+              <button class="text-xs text-amber-400 hover:text-amber-300 hover:underline"
+                      hx-get="/inventory/source/notebook/{{ t.source_notebook_id }}"
+                      hx-target="#detail-modal"
+                      hx-swap="innerHTML"
+                      title="Open notebook: {{ t.source_notebook_id }}">{{ icon }} {{ label }} →</button>
+            {% elif t.source_kind == 'scheduled_query' and t.source_scheduled_query_id %}
+              <button class="text-xs text-violet-400 hover:text-violet-300 hover:underline"
+                      hx-get="/inventory/source/sq/{{ t.source_scheduled_query_id }}"
+                      hx-target="#detail-modal"
+                      hx-swap="innerHTML"
+                      title="Open scheduled query: {{ t.source_scheduled_query_id }}">{{ icon }} {{ label }} →</button>
+            {% else %}
+              <span class="text-xs text-slate-400">{{ icon }} {{ label }}</span>
+            {% endif %}
+          </td>
+          <td class="px-3 py-2 text-right text-slate-400 tabular-nums">{{ humanize_count(t.row_count) }}</td>
+          <td class="px-3 py-2 text-right text-slate-400 tabular-nums">{{ humanize_bytes(t.size_bytes) }}</td>
+          <td class="px-3 py-2 text-center">
+            <span class="text-xs
+              {% if t.complexity == 'high' %}text-rose-400
+              {% elif t.complexity == 'medium' %}text-amber-400
+              {% else %}text-emerald-400{% endif %}">{{ t.complexity }}</span>
+          </td>
+          <td class="px-3 py-2 text-center">
+            <span class="text-xs
+              {% if t.heat == 'hot' %}text-orange-400
+              {% elif t.heat == 'warm' %}text-yellow-400
+              {% else %}text-slate-500{% endif %}">{{ t.heat }} <span class="text-slate-600">({{ humanize_count(t.query_count_30d) }})</span></span>
+          </td>
+          <td class="px-3 py-2 text-right">
+            {% set is_chosen = t.fqn in selected %}
+            <button id="sel-{{ loop.index }}"
+                    hx-post="/inventory/select/{{ t.fqn }}"
+                    hx-swap="outerHTML"
+                    class="text-xs px-2.5 py-1 rounded border transition-colors
+                           {% if is_chosen %}bg-accent-600 border-accent-600 text-ink-950 font-medium hover:bg-accent-700{% else %}border-ink-700 text-slate-400 hover:border-accent-600 hover:text-accent-500{% endif %}">
+              {% if is_chosen %}✓ in plan{% else %}+ add{% endif %}
+            </button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endif %}
