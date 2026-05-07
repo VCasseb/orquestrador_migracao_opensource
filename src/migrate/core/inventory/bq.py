@@ -45,9 +45,18 @@ def _scan_dataset(client, project: str, dataset: str) -> list[TableMetadata]:
     from `__TABLES__`; if unavailable, they're left as None.
     """
     cols_q = f"""
-        SELECT table_name, column_name, data_type, is_nullable, description
-        FROM `{project}.{dataset}.INFORMATION_SCHEMA.COLUMN_FIELD_PATHS`
-        ORDER BY table_name, ordinal_position
+        SELECT
+          c.table_name,
+          c.column_name,
+          c.data_type,
+          c.is_nullable,
+          cfp.description
+        FROM `{project}.{dataset}.INFORMATION_SCHEMA.COLUMNS` c
+        LEFT JOIN `{project}.{dataset}.INFORMATION_SCHEMA.COLUMN_FIELD_PATHS` cfp
+          ON c.table_name = cfp.table_name
+         AND c.column_name = cfp.column_name
+         AND cfp.field_path = c.column_name
+        ORDER BY c.table_name, c.ordinal_position
     """
     tabs_q = f"""
         SELECT t.table_name, t.table_type
