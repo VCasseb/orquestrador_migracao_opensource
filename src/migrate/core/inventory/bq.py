@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import sys
 from datetime import datetime, timezone
 from typing import Iterable
 
@@ -13,8 +15,16 @@ def _client(project: str, sa_path: str | None):
     return bigquery.Client(project=project)
 
 
-def _list_datasets(client) -> list[str]:
-    return [d.dataset_id for d in client.list_datasets()]
+def _list_datasets(client) -> list[tuple[str, str | None]]:
+    """Returns [(dataset_id, location)] — location may be None if not retrievable."""
+    out: list[tuple[str, str | None]] = []
+    for d in client.list_datasets():
+        try:
+            full = client.get_dataset(d.reference)
+            out.append((d.dataset_id, full.location))
+        except Exception:
+            out.append((d.dataset_id, None))
+    return out
 
 
 _TABLE_TYPE_MAP = {
@@ -27,66 +37,112 @@ _TABLE_TYPE_MAP = {
 
 
 def _scan_dataset(client, project: str, dataset: str) -> list[TableMetadata]:
-    """Read INFORMATION_SCHEMA for all tables in one dataset."""
+    """Read INFORMATION_SCHEMA for all tables in one dataset.
+
+    Resilient: uses 3 separate queries (TABLES + TABLE_OPTIONS + VIEWS) instead of
+    a single JOIN-on-`__TABLES__` so missing `__TABLES__` access (common with VPC SC,
+    org policies) doesn't kill the whole dataset. Row count / size come best-effort
+    from `__TABLES__`; if unavailable, they're left as None.
+    """
     cols_q = f"""
         SELECT table_name, column_name, data_type, is_nullable, description
         FROM `{project}.{dataset}.INFORMATION_SCHEMA.COLUMN_FIELD_PATHS`
         ORDER BY table_name, ordinal_position
     """
     tabs_q = f"""
-        SELECT
-          t.table_name,
-          t.table_type,
-          o.option_value AS description,
-          ts.row_count,
-          ts.size_bytes,
-          v.view_definition
+        SELECT t.table_name, t.table_type
         FROM `{project}.{dataset}.INFORMATION_SCHEMA.TABLES` t
-        LEFT JOIN `{project}.{dataset}.INFORMATION_SCHEMA.TABLE_OPTIONS` o
-          ON t.table_name = o.table_name AND o.option_name = 'description'
-        LEFT JOIN `{project}.{dataset}.__TABLES__` ts
-          ON t.table_name = ts.table_id
-        LEFT JOIN `{project}.{dataset}.INFORMATION_SCHEMA.VIEWS` v
-          ON t.table_name = v.table_name
     """
+    opts_q = f"""
+        SELECT table_name, option_value AS description
+        FROM `{project}.{dataset}.INFORMATION_SCHEMA.TABLE_OPTIONS`
+        WHERE option_name = 'description'
+    """
+    views_q = f"""
+        SELECT table_name, view_definition
+        FROM `{project}.{dataset}.INFORMATION_SCHEMA.VIEWS`
+    """
+    legacy_q = f"SELECT table_id, row_count, size_bytes FROM `{project}.{dataset}.__TABLES__`"
 
     cols_by_table: dict[str, list[ColumnMetadata]] = {}
-    for row in client.query(cols_q).result():
-        cols_by_table.setdefault(row.table_name, []).append(
-            ColumnMetadata(
-                name=row.column_name,
-                type=row.data_type,
-                nullable=(row.is_nullable == "YES"),
-                description=row.description or "",
+    try:
+        for row in client.query(cols_q).result():
+            cols_by_table.setdefault(row.table_name, []).append(
+                ColumnMetadata(
+                    name=row.column_name,
+                    type=row.data_type,
+                    nullable=(row.is_nullable == "YES"),
+                    description=row.description or "",
+                )
             )
-        )
+    except Exception as e:
+        print(f"  [WARN] {project}.{dataset}: columns query failed — {e}", file=sys.stderr)
+
+    desc_by_table: dict[str, str] = {}
+    try:
+        for row in client.query(opts_q).result():
+            desc_by_table[row.table_name] = (row.description or "").strip("\"'")
+    except Exception:
+        pass
+
+    view_by_table: dict[str, str] = {}
+    try:
+        for row in client.query(views_q).result():
+            view_by_table[row.table_name] = row.view_definition
+    except Exception:
+        pass
+
+    legacy_by_table: dict[str, tuple[int | None, int | None]] = {}
+    try:
+        for row in client.query(legacy_q).result():
+            legacy_by_table[row.table_id] = (row.row_count, row.size_bytes)
+    except Exception:
+        # __TABLES__ unavailable (VPC SC, org policy, missing legacy access) — skip
+        pass
 
     tables: list[TableMetadata] = []
-    for row in client.query(tabs_q).result():
-        ttype = _TABLE_TYPE_MAP.get(row.table_type, "TABLE")
-        tables.append(
-            TableMetadata(
-                project=project,
-                dataset=dataset,
-                name=row.table_name,
-                type=ttype,
-                columns=cols_by_table.get(row.table_name, []),
-                row_count=row.row_count,
-                size_bytes=row.size_bytes,
-                view_query=row.view_definition,
-                description=row.description or "",
+    try:
+        for row in client.query(tabs_q).result():
+            ttype = _TABLE_TYPE_MAP.get(row.table_type, "TABLE")
+            row_count, size_bytes = legacy_by_table.get(row.table_name, (None, None))
+            tables.append(
+                TableMetadata(
+                    project=project,
+                    dataset=dataset,
+                    name=row.table_name,
+                    type=ttype,
+                    columns=cols_by_table.get(row.table_name, []),
+                    row_count=row_count,
+                    size_bytes=size_bytes,
+                    view_query=view_by_table.get(row.table_name),
+                    description=desc_by_table.get(row.table_name, ""),
+                )
             )
-        )
+    except Exception as e:
+        print(f"  [ERROR] {project}.{dataset}: TABLES query failed — {e}", file=sys.stderr)
     return tables
 
 
-def _query_heatmap(client, project: str) -> dict[str, int]:
-    """Returns FQN → query count over last 30 days (best-effort)."""
+def _bq_region(location: str | None) -> str:
+    """Convert a BQ dataset location ('US', 'southamerica-east1', etc) into the
+    INFORMATION_SCHEMA region literal ('region-us', 'region-southamerica-east1')."""
+    if not location:
+        return "region-us"
+    loc = location.lower()
+    return f"region-{loc}"
+
+
+def _query_heatmap(client, project: str, region: str) -> dict[str, int]:
+    """Returns FQN → query count over last 30 days (best-effort).
+
+    Region must match the dataset region (multi-region 'US'/'EU' or location like
+    'southamerica-east1'). Falls back to empty if unavailable.
+    """
     q = f"""
         SELECT
           referenced_table.project_id || '.' || referenced_table.dataset_id || '.' || referenced_table.table_id AS fqn,
           COUNT(*) AS hits
-        FROM `{project}`.`region-us`.INFORMATION_SCHEMA.JOBS_BY_PROJECT,
+        FROM `{project}`.`{region}`.INFORMATION_SCHEMA.JOBS_BY_PROJECT,
              UNNEST(referenced_tables) AS referenced_table
         WHERE creation_time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)
           AND state = 'DONE'
@@ -94,7 +150,8 @@ def _query_heatmap(client, project: str) -> dict[str, int]:
     """
     try:
         return {row.fqn: row.hits for row in client.query(q).result()}
-    except Exception:
+    except Exception as e:
+        print(f"  [WARN] heatmap query failed for {project} in {region}: {e}", file=sys.stderr)
         return {}
 
 
@@ -103,18 +160,40 @@ def scan_projects(project_ids: Iterable[str], sa_path: str | None = None) -> Inv
     all_tables: list[TableMetadata] = []
     heatmap: dict[str, int] = {}
 
+    region_override = os.environ.get("GCP_REGION", "").strip().lower() or None
+
     for project in project_list:
+        print(f"[scan] {project}: connecting…", file=sys.stderr)
         client = _client(project, sa_path)
-        for dataset in _list_datasets(client):
-            try:
-                all_tables.extend(_scan_dataset(client, project, dataset))
-            except Exception:
-                continue
-        heatmap.update(_query_heatmap(client, project))
+        try:
+            datasets = _list_datasets(client)
+        except Exception as e:
+            print(f"  [ERROR] {project}: cannot list datasets — {e}", file=sys.stderr)
+            continue
+        print(f"[scan] {project}: {len(datasets)} dataset(s)", file=sys.stderr)
+
+        regions_seen: set[str] = set()
+        for dataset_id, location in datasets:
+            print(f"  [scan] {project}.{dataset_id} (location: {location or 'unknown'})", file=sys.stderr)
+            ds_tables = _scan_dataset(client, project, dataset_id)
+            print(f"    → {len(ds_tables)} table(s)/view(s)", file=sys.stderr)
+            all_tables.extend(ds_tables)
+            if location:
+                regions_seen.add(location.lower())
+
+        # Heatmap once per region observed in this project (or env-overridden)
+        regions_to_query = (
+            {region_override} if region_override
+            else regions_seen if regions_seen
+            else {"us"}
+        )
+        for loc in regions_to_query:
+            heatmap.update(_query_heatmap(client, project, _bq_region(loc)))
 
     for t in all_tables:
         t.query_count_30d = heatmap.get(t.fqn, 0)
 
+    print(f"[scan] done: {len(all_tables)} object(s) total", file=sys.stderr)
     return Inventory(
         scanned_at=datetime.now(timezone.utc),
         projects=project_list,
