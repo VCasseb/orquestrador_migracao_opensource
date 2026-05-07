@@ -7,6 +7,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/htmx.org@2.0.2"></script>
   <script src="https://unpkg.com/alpinejs@3.14.1/dist/cdn.min.js" defer></script>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
   <script>
     tailwind.config = {
       theme: {
@@ -28,8 +29,10 @@
   <div class="flex min-h-screen">
     <aside class="w-64 bg-ink-900 border-r border-ink-700 flex flex-col">
       <div class="px-5 py-5 border-b border-ink-700">
-        <div class="flex items-center gap-2">
-          <div class="w-8 h-8 rounded bg-accent-500 flex items-center justify-center text-ink-950 font-bold">m</div>
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded bg-accent-500 flex items-center justify-center text-ink-950">
+            <i data-lucide="arrow-left-right" class="w-5 h-5" stroke-width="2.5"></i>
+          </div>
           <div>
             <div class="font-semibold text-slate-100">migrate</div>
             <div class="text-xs text-slate-500">GCP → Databricks</div>
@@ -38,20 +41,21 @@
       </div>
       <nav class="flex-1 py-4">
         {% set links = [
-          ('connections', '🔌', 'Connections'),
-          ('inventory',   '📋', 'Inventory'),
-          ('lineage',     '🔍', 'Lineage'),
-          ('plan',        '📝', 'Plan Waves'),
-          ('convert',     '🔄', '1. Convert'),
-          ('review',      '👀', '2. Review'),
-          ('deploy',      '🚀', '3. Deploy'),
-          ('validate',    '✅', '4. Validate'),
-          ('docs',        '📚', 'Docs'),
+          ('connections', 'plug',              'Connections'),
+          ('inventory',   'database',          'Inventory'),
+          ('lineage',     'share-2',           'Lineage'),
+          ('plan',        'git-merge',         'Plan Waves'),
+          ('convert',     'arrow-right-left',  '1. Convert'),
+          ('review',      'eye',               '2. Review'),
+          ('deploy',      'rocket',            '3. Deploy'),
+          ('validate',    'shield-check',      '4. Validate'),
+          ('docs',        'book-open',         'Docs'),
         ] %}
         {% for slug, icon, label in links %}
           <a href="/{{ slug }}"
-             class="nav-link block px-5 py-2.5 text-sm border-l-2 border-transparent hover:bg-ink-800 transition-colors {% if active == slug %}active{% endif %}">
-            <span class="mr-2">{{ icon }}</span>{{ label }}
+             class="nav-link flex items-center gap-3 px-5 py-2.5 text-sm border-l-2 border-transparent hover:bg-ink-800 transition-colors {% if active == slug %}active{% endif %}">
+            <i data-lucide="{{ icon }}" class="w-4 h-4 flex-shrink-0"></i>
+            <span>{{ label }}</span>
           </a>
         {% endfor %}
       </nav>
@@ -66,5 +70,11 @@
       </div>
     </main>
   </div>
+
+  <script>
+    function renderIcons() { if (window.lucide) lucide.createIcons(); }
+    document.addEventListener('DOMContentLoaded', renderIcons);
+    document.body.addEventListener('htmx:afterSwap', renderIcons);
+  </script>
 </body>
 </html>
