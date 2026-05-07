@@ -1,12 +1,11 @@
 {% extends "base.html" %}
 {% block title %}Convert · migrate{% endblock %}
 {% block content %}
-<div class="mb-6 flex items-start justify-between">
+<div class="mb-4 flex items-start justify-between">
   <div>
     <h1 class="text-2xl font-semibold text-slate-100">Convert</h1>
     <p class="text-slate-400 mt-1 text-sm">
-      AI-driven conversion of code artifacts (DAGs, notebooks) to the target platform.
-      Tables are inventoried for lineage but not migrated as data.
+      Source on the left auto-loads when you pick an item. Click Convert to see the AI-generated target on the right.
     </p>
   </div>
   <div class="flex items-center gap-2">
@@ -19,185 +18,304 @@
   </div>
 </div>
 
-<!-- Kind picker tabs -->
+<!-- Kind tabs -->
 <div class="border-b border-ink-700 mb-4 flex gap-4 text-sm">
   {% set kinds = [
-    ('dag',      '🟩', 'DAGs',      inv.dags|length if inv else 0),
-    ('notebook', '📓', 'Notebooks', inv.notebooks|length if inv else 0),
-    ('table',    '🔷', 'Tables (legacy SQL)', inv.tables|length if inv else 0),
+    ('dag',      'git-merge', 'DAGs',                inv.dags|length if inv else 0),
+    ('notebook', 'notebook',  'Notebooks',           inv.notebooks|length if inv else 0),
+    ('table',    'table-2',   'Tables (legacy SQL)', inv.tables|length if inv else 0),
   ] %}
   {% for k, icon, label, count in kinds %}
     <a href="/convert?kind={{ k }}"
-       class="py-2 border-b-2 transition-colors
+       class="py-2 border-b-2 transition-colors flex items-center gap-2
               {% if kind == k %}border-accent-500 text-accent-500{% else %}border-transparent text-slate-400 hover:text-slate-200{% endif %}">
-      {{ icon }} {{ label }} <span class="text-xs text-slate-500">({{ count }})</span>
+      <i data-lucide="{{ icon }}" class="w-4 h-4"></i>
+      <span>{{ label }}</span>
+      <span class="text-xs text-slate-500">({{ count }})</span>
     </a>
   {% endfor %}
 </div>
 
-<div class="bg-ink-900 border border-ink-700 rounded-lg p-5 mb-6">
-  {% if not inv %}
+{% if not inv %}
+  <div class="bg-ink-900 border border-ink-700 rounded-lg p-12 text-center">
     <p class="text-sm text-slate-400">Run a <a href="/inventory" class="text-accent-500 hover:underline">scan</a> first.</p>
-
-  {% elif kind == "dag" %}
-    {% if not inv.dags %}
-      <p class="text-sm text-slate-400">No DAGs in inventory. Configure <code>GCP_COMPOSER_DAG_BUCKET</code> in <code>.env</code> and rescan.</p>
-    {% else %}
-    <h2 class="font-semibold text-slate-200 mb-3">Convert an Airflow DAG → {{ target_platform }}</h2>
-    <form hx-post="/convert/code" hx-target="#conv-result" hx-swap="innerHTML" hx-indicator="#conv-indicator"
-          class="space-y-3">
-      <input type="hidden" name="kind" value="dag" />
-      <div>
-        <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">DAG</label>
-        <select name="name" class="w-full bg-ink-800 border border-ink-700 rounded px-3 py-2 text-sm">
-          {% for d in inv.dags %}
-            <option value="{{ d.name }}">{{ d.name }} · schedule: {{ d.schedule or '—' }} · {{ d.tasks|length }} task(s)</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div>
-        <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">
-          Custom prompt <span class="text-slate-600 font-normal">(optional — extra instructions for the LLM)</span>
-        </label>
-        <textarea name="prompt" rows="3"
-                  placeholder="e.g.: 'Use Asset Bundles syntax with one job per task.' or 'Replace EmailOperator with Slack webhooks.'"
-                  class="w-full bg-ink-800 border border-ink-700 rounded px-3 py-2 text-sm font-mono"></textarea>
-      </div>
-      <div class="flex items-center gap-3">
-        <select name="target" class="bg-ink-800 border border-ink-700 rounded px-3 py-2 text-sm">
-          <option value="">Use TARGET_PLATFORM ({{ target_platform }})</option>
-          <option value="databricks">Force: databricks</option>
-          <option value="aws">Force: aws (MWAA)</option>
-        </select>
-        <button class="px-4 py-2 text-sm rounded bg-accent-600 hover:bg-accent-700 text-ink-950 font-medium">Convert DAG</button>
-        <span id="conv-indicator" class="htmx-indicator text-xs text-accent-500">Calling Claude…</span>
-      </div>
-    </form>
-    {% endif %}
-
-  {% elif kind == "notebook" %}
-    {% if not inv.notebooks %}
-      <p class="text-sm text-slate-400">No notebooks in inventory. Configure <code>GCP_NOTEBOOKS_BUCKET</code> in <code>.env</code> and rescan.</p>
-    {% else %}
-    <h2 class="font-semibold text-slate-200 mb-3">Convert a notebook → {{ target_platform }}</h2>
-    <form hx-post="/convert/code" hx-target="#conv-result" hx-swap="innerHTML" hx-indicator="#conv-indicator"
-          class="space-y-3">
-      <input type="hidden" name="kind" value="notebook" />
-      <div>
-        <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">Notebook</label>
-        <select name="name" class="w-full bg-ink-800 border border-ink-700 rounded px-3 py-2 text-sm">
-          {% for n in inv.notebooks %}
-            <option value="{{ n.name }}">{{ n.name }} · {{ n.kind }} · {{ n.cells|length }} cell(s)</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div>
-        <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">
-          Custom prompt <span class="text-slate-600 font-normal">(optional)</span>
-        </label>
-        <textarea name="prompt" rows="3"
-                  placeholder="e.g.: 'Use Delta Live Tables for any pandas_gbq.to_gbq calls.' or 'Keep the markdown cells in Portuguese.'"
-                  class="w-full bg-ink-800 border border-ink-700 rounded px-3 py-2 text-sm font-mono"></textarea>
-      </div>
-      <div class="flex items-center gap-3">
-        <select name="target" class="bg-ink-800 border border-ink-700 rounded px-3 py-2 text-sm">
-          <option value="">Use TARGET_PLATFORM ({{ target_platform }})</option>
-          <option value="databricks">Force: databricks</option>
-          <option value="aws">Force: aws (EMR/Glue)</option>
-        </select>
-        <button class="px-4 py-2 text-sm rounded bg-accent-600 hover:bg-accent-700 text-ink-950 font-medium">Convert notebook</button>
-        <span id="conv-indicator" class="htmx-indicator text-xs text-accent-500">Calling Claude…</span>
-      </div>
-    </form>
-    {% endif %}
-
-  {% else %}
-    {# legacy table flow — sqlglot SQL conversion (kept for reference, no longer the focus) #}
-    <h2 class="font-semibold text-slate-200 mb-1">Convert a table SQL <span class="text-xs text-slate-500 font-normal">(legacy — informational only)</span></h2>
-    <p class="text-xs text-slate-500 mb-3">Tables are no longer migrated as data — this only generates the SQL/notebook artifact for reference. Real migration is via DAGs/notebooks above.</p>
-    <form hx-post="/convert/run" hx-target="#conv-result" hx-swap="innerHTML" hx-indicator="#conv-indicator"
-          class="grid grid-cols-12 gap-3 items-end">
-      <div class="col-span-7">
-        <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">Source table</label>
-        <select name="fqn" class="w-full bg-ink-800 border border-ink-700 rounded px-3 py-2 text-sm">
-          {% for t in inv.tables %}<option value="{{ t.fqn }}">{{ t.fqn }} ({{ t.type }})</option>{% endfor %}
-        </select>
-      </div>
-      <div class="col-span-3">
-        <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">LLM fallback</label>
-        <label class="flex items-center gap-2 px-3 py-2 bg-ink-800 border border-ink-700 rounded text-sm">
-          <input type="checkbox" name="use_llm" value="1" checked class="accent-accent-500" />
-          Enable Claude
-        </label>
-      </div>
-      <div class="col-span-2">
-        <button class="px-4 py-2 text-sm rounded bg-accent-600 hover:bg-accent-700 text-ink-950 font-medium w-full">Convert</button>
-        <span id="conv-indicator" class="htmx-indicator text-xs text-accent-500">…</span>
-      </div>
-    </form>
-  {% endif %}
-</div>
-
-<div id="conv-result"></div>
-
-{# Past conversions split by kind #}
-{% if kind == "dag" %}
-  {% set existing = dag_conversions %}
-{% elif kind == "notebook" %}
-  {% set existing = notebook_conversions %}
+  </div>
 {% else %}
-  {% set existing = table_conversions %}
+
+{# choose the items list per kind #}
+{% if kind == "dag" %}
+  {% set items = inv.dags %}
+  {% set empty_msg = "No DAGs in inventory. Set GCP_COMPOSER_DAG_BUCKET in .env and rescan." %}
+{% elif kind == "notebook" %}
+  {% set items = inv.notebooks %}
+  {% set empty_msg = "No notebooks in inventory. Set GCP_NOTEBOOKS_BUCKET in .env and rescan." %}
+{% else %}
+  {% set items = inv.tables %}
+  {% set empty_msg = "No tables in inventory." %}
 {% endif %}
 
-{% if existing %}
-<div class="mt-8 bg-ink-900 border border-ink-700 rounded-lg overflow-hidden">
-  <div class="px-6 py-3 border-b border-ink-700">
-    <h2 class="font-semibold text-slate-100">Past conversions ({{ kind }})</h2>
+{% if not items %}
+  <div class="bg-ink-900 border border-ink-700 rounded-lg p-8 text-center text-sm text-slate-400">
+    {{ empty_msg }}
   </div>
-  <div class="divide-y divide-ink-800">
+{% else %}
+
+<!-- Top control row -->
+<div class="bg-ink-900 border border-ink-700 rounded-lg p-4 mb-4 grid grid-cols-12 gap-3 items-end">
+  <div class="col-span-4">
+    <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">
+      {% if kind == "dag" %}DAG{% elif kind == "notebook" %}Notebook{% else %}Table{% endif %}
+    </label>
+    <select id="item-select" data-kind="{{ kind }}"
+            class="w-full bg-ink-800 border border-ink-700 rounded px-3 py-2 text-sm focus:border-accent-500 focus:outline-none">
+      {% if kind == "dag" %}
+        {% for d in items %}<option value="{{ d.name }}">{{ d.name }} · {{ d.schedule or '—' }}</option>{% endfor %}
+      {% elif kind == "notebook" %}
+        {% for n in items %}<option value="{{ n.name }}">{{ n.name }} · {{ n.kind }} · {{ n.cells|length }} cell(s)</option>{% endfor %}
+      {% else %}
+        {% for t in items %}<option value="{{ t.fqn }}">{{ t.fqn }} ({{ t.type }})</option>{% endfor %}
+      {% endif %}
+    </select>
+  </div>
+  <div class="col-span-5">
+    <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">
+      Custom prompt <span class="text-slate-600 font-normal">(optional)</span>
+    </label>
+    <input type="text" id="prompt-input"
+           placeholder="e.g.: 'Use Asset Bundles syntax' or 'Replace EmailOperator with Slack'"
+           class="w-full bg-ink-800 border border-ink-700 rounded px-3 py-2 text-sm focus:border-accent-500 focus:outline-none" />
+  </div>
+  <div class="col-span-2">
+    <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">Target</label>
+    <select id="target-select"
+            class="w-full bg-ink-800 border border-ink-700 rounded px-3 py-2 text-sm">
+      <option value="">{{ target_platform }} (default)</option>
+      <option value="databricks">databricks</option>
+      <option value="aws">aws</option>
+    </select>
+  </div>
+  <div class="col-span-1">
+    <button id="convert-btn"
+            class="w-full px-3 py-2 text-sm rounded bg-accent-600 hover:bg-accent-700 text-ink-950 font-medium transition-colors flex items-center justify-center gap-1.5">
+      <i data-lucide="sparkles" class="w-4 h-4"></i>
+      <span>Convert</span>
+    </button>
+  </div>
+</div>
+
+<!-- Convert state strip (shows after first convert) -->
+<div id="meta-strip" class="hidden mb-3 flex items-center gap-3 text-xs px-3 py-2 bg-ink-900 border border-ink-700 rounded-lg">
+  <span class="text-slate-500">model:</span><code id="meta-model" class="text-slate-300">—</code>
+  <span class="text-slate-500">target:</span><code id="meta-target" class="text-slate-300">—</code>
+  <span id="meta-status-wrap"></span>
+  <a href="#" id="meta-copy" class="ml-auto text-accent-500 hover:underline">Copy converted</a>
+</div>
+
+<!-- Side-by-side editors -->
+<div class="grid grid-cols-2 gap-4 mb-4">
+  <div class="bg-ink-900 border border-ink-700 rounded-lg overflow-hidden">
+    <div class="px-4 py-2 border-b border-ink-700 flex items-center justify-between text-xs">
+      <div class="flex items-center gap-2">
+        <i data-lucide="file-code" class="w-3.5 h-3.5 text-slate-500"></i>
+        <span class="text-slate-400 uppercase tracking-wider font-semibold">Original (GCP)</span>
+        <code id="source-label" class="text-slate-500 text-[11px] font-mono ml-1 truncate max-w-md">—</code>
+      </div>
+      <div id="source-extra" class="text-slate-500 text-[11px]"></div>
+    </div>
+    <div id="source-editor" style="height: 64vh;"></div>
+  </div>
+
+  <div class="bg-ink-900 border border-ink-700 rounded-lg overflow-hidden">
+    <div class="px-4 py-2 border-b border-ink-700 flex items-center justify-between text-xs">
+      <div class="flex items-center gap-2">
+        <i data-lucide="sparkles" class="w-3.5 h-3.5 text-accent-500"></i>
+        <span class="text-accent-500 uppercase tracking-wider font-semibold">Converted ({{ target_platform }})</span>
+      </div>
+      <span id="convert-status" class="text-slate-500 text-[11px]">click <strong>Convert</strong> to generate</span>
+    </div>
+    <div id="converted-editor" style="height: 64vh;"></div>
+  </div>
+</div>
+
+<!-- Notes -->
+<div id="notes-box" class="hidden mb-4 px-4 py-3 bg-amber-950/20 border border-amber-800/30 rounded-lg text-xs text-amber-200">
+  <div class="text-xs uppercase tracking-wider text-amber-400 mb-1">Conversion notes</div>
+  <ul id="notes-list" class="space-y-0.5"></ul>
+</div>
+
+<!-- History -->
+{% if kind == "dag" %}{% set existing = dag_conversions %}
+{% elif kind == "notebook" %}{% set existing = notebook_conversions %}
+{% else %}{% set existing = table_conversions %}{% endif %}
+{% if existing %}
+<details class="bg-ink-900 border border-ink-700 rounded-lg">
+  <summary class="px-4 py-3 cursor-pointer text-sm text-slate-300 hover:text-slate-100 flex items-center gap-2">
+    <i data-lucide="history" class="w-4 h-4"></i>
+    <span>History · {{ existing|length }} past conversion(s)</span>
+  </summary>
+  <div class="border-t border-ink-700 divide-y divide-ink-800">
     {% for p in existing %}
-    <div class="px-6 py-3 flex items-center justify-between">
-      <div class="font-mono text-sm text-slate-300">{{ p.stem }}</div>
+    <div class="px-6 py-2.5 flex items-center justify-between hover:bg-ink-800/40">
+      <div class="font-mono text-xs text-slate-400">{{ p.stem.replace('_meta', '') }}</div>
       {% if kind == 'table' %}
         {% set fqn_dotted = p.stem.replace('_', '.').replace('.meta', '') %}
-        <button hx-get="/convert/view/{{ fqn_dotted }}" hx-target="#conv-result" hx-swap="innerHTML"
-                class="px-3 py-1.5 text-sm rounded bg-ink-800 border border-ink-700 hover:bg-ink-700">View</button>
+        <button hx-get="/convert/view/{{ fqn_dotted }}" hx-target="#legacy-result" hx-swap="innerHTML"
+                class="px-2.5 py-1 text-xs rounded bg-ink-800 border border-ink-700 hover:bg-ink-700">View (legacy modal)</button>
       {% else %}
-        <button hx-get="/convert/code/view?file={{ p }}" hx-target="#conv-result" hx-swap="innerHTML"
-                class="px-3 py-1.5 text-sm rounded bg-ink-800 border border-ink-700 hover:bg-ink-700">View</button>
+        <button class="history-load px-2.5 py-1 text-xs rounded bg-ink-800 border border-ink-700 hover:bg-ink-700"
+                data-meta="{{ p }}">Load into panes</button>
       {% endif %}
     </div>
     {% endfor %}
   </div>
-</div>
+</details>
+<div id="legacy-result"></div>
 {% endif %}
-
-<style>
-  .htmx-indicator { opacity: 0; transition: opacity 200ms; }
-  .htmx-request .htmx-indicator { opacity: 1; }
-</style>
 
 <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.50.0/min/vs/loader.js"></script>
 <script>
-  require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.50.0/min/vs' } });
-  require(['vs/editor/editor.main'], function () { window.__monacoReady = true; });
+(function () {
+  const KIND = "{{ kind }}";
+  const TARGET = "{{ target_platform }}";
+  let sourceEditor, convertedEditor;
+  let monacoReady = false;
 
-  window.mountConvertDiff = function (containerId, original, modified, lang = 'sql') {
-    const tryMount = () => {
-      if (!window.__monacoReady) { setTimeout(tryMount, 80); return; }
-      const el = document.getElementById(containerId);
-      if (!el) return;
-      el.innerHTML = '';
-      const o = monaco.editor.createModel(original || '', lang);
-      const m = monaco.editor.createModel(modified || '', lang);
-      const ed = monaco.editor.createDiffEditor(el, {
-        automaticLayout: true, readOnly: true, theme: 'vs-dark',
-        renderSideBySide: true, fontSize: 12, lineNumbers: 'on',
-        minimap: { enabled: false },
-      });
-      ed.setModel({ original: o, modified: m });
-    };
-    tryMount();
-  };
+  require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.50.0/min/vs' } });
+  require(['vs/editor/editor.main'], () => {
+    monacoReady = true;
+    sourceEditor = monaco.editor.create(document.getElementById('source-editor'), {
+      value: '// Pick an item above to load source…',
+      language: 'python', theme: 'vs-dark', readOnly: true,
+      fontSize: 12, lineNumbers: 'on', minimap: { enabled: false }, automaticLayout: true,
+    });
+    convertedEditor = monaco.editor.create(document.getElementById('converted-editor'), {
+      value: '// Click Convert to generate the target version…',
+      language: 'python', theme: 'vs-dark', readOnly: true,
+      fontSize: 12, lineNumbers: 'on', minimap: { enabled: false }, automaticLayout: true,
+    });
+    // auto-load the first item
+    loadSource(document.getElementById('item-select').value);
+  });
+
+  function setLanguage(editor, lang) {
+    monaco.editor.setModelLanguage(editor.getModel(), lang || 'plaintext');
+  }
+
+  async function loadSource(name) {
+    if (!monacoReady || !name) return;
+    sourceEditor.setValue('// Loading…');
+    try {
+      const r = await fetch(`/convert/source.json?kind=${KIND}&name=${encodeURIComponent(name)}`);
+      const data = await r.json();
+      if (data.error) {
+        sourceEditor.setValue('// ' + data.error);
+        return;
+      }
+      sourceEditor.setValue(data.code || '');
+      setLanguage(sourceEditor, data.lang);
+      document.getElementById('source-label').textContent = data.label || '—';
+      const extra = data.extra || {};
+      document.getElementById('source-extra').textContent =
+        Object.entries(extra).filter(([k,v]) => v && (Array.isArray(v) ? v.length : true))
+          .slice(0,3).map(([k,v]) => `${k}: ${Array.isArray(v) ? v.length : v}`).join(' · ');
+    } catch (e) {
+      sourceEditor.setValue('// Fetch error: ' + e);
+    }
+  }
+
+  async function runConvert() {
+    if (!monacoReady) return;
+    const name = document.getElementById('item-select').value;
+    const target = document.getElementById('target-select').value;
+    const prompt = document.getElementById('prompt-input').value;
+    if (!name) return;
+
+    document.getElementById('convert-status').innerHTML =
+      '<span class="text-accent-500">Calling LLM…</span>';
+    convertedEditor.setValue('// Generating with the active LLM provider…');
+
+    try {
+      const fd = new FormData();
+      fd.append('kind', KIND);
+      fd.append('name', name);
+      fd.append('target', target);
+      fd.append('prompt', prompt);
+      const r = await fetch('/convert/code.json', { method: 'POST', body: fd });
+      const data = await r.json();
+      if (data.error) {
+        convertedEditor.setValue('// ERROR: ' + data.error);
+        document.getElementById('convert-status').innerHTML =
+          '<span class="text-rose-400">failed</span>';
+        return;
+      }
+      convertedEditor.setValue(data.converted || '');
+      setLanguage(convertedEditor, data.lang);
+
+      document.getElementById('convert-status').innerHTML =
+        '<span class="text-emerald-400">✓ converted &amp; saved locally</span>';
+
+      const strip = document.getElementById('meta-strip');
+      strip.classList.remove('hidden');
+      document.getElementById('meta-model').textContent = data.model || '—';
+      document.getElementById('meta-target').textContent = data.target_path || '—';
+
+      const notes = data.notes || [];
+      const notesBox = document.getElementById('notes-box');
+      const notesList = document.getElementById('notes-list');
+      notesList.innerHTML = '';
+      if (notes.length) {
+        notesBox.classList.remove('hidden');
+        notes.forEach(n => {
+          const li = document.createElement('li');
+          li.textContent = '· ' + n;
+          notesList.appendChild(li);
+        });
+      } else {
+        notesBox.classList.add('hidden');
+      }
+    } catch (e) {
+      convertedEditor.setValue('// Network error: ' + e);
+      document.getElementById('convert-status').innerHTML =
+        '<span class="text-rose-400">network error</span>';
+    }
+  }
+
+  document.getElementById('item-select').addEventListener('change', e => loadSource(e.target.value));
+  document.getElementById('convert-btn').addEventListener('click', runConvert);
+
+  document.getElementById('meta-copy').addEventListener('click', e => {
+    e.preventDefault();
+    if (!convertedEditor) return;
+    navigator.clipboard.writeText(convertedEditor.getValue());
+    e.target.textContent = '✓ Copied';
+    setTimeout(() => e.target.textContent = 'Copy converted', 1500);
+  });
+
+  // History: click "Load into panes" → fetch saved meta + populate
+  document.querySelectorAll('.history-load').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const metaPath = btn.dataset.meta;
+      try {
+        // Server has /convert/code/view?file=<meta> that returns HTML — we instead
+        // re-derive name from filename and fetch source + use the .py/.yaml on disk.
+        // Simpler: just GET source for the same name, then GET the saved file via a static path is harder;
+        // we'll re-run conversion from inventory which is fast for sample-mode users without LLM.
+        // Cleaner: read saved meta-> output_path -> fetch contents.
+        const r = await fetch('/convert/history-load?meta=' + encodeURIComponent(metaPath));
+        const data = await r.json();
+        if (data.error) { alert(data.error); return; }
+        sourceEditor.setValue(data.source || '');
+        setLanguage(sourceEditor, data.source_lang || 'python');
+        convertedEditor.setValue(data.converted || '');
+        setLanguage(convertedEditor, data.converted_lang || 'python');
+        document.getElementById('source-label').textContent = data.source_label || '';
+      } catch (e) {
+        alert('Load failed: ' + e);
+      }
+    });
+  });
+})();
 </script>
+{% endif %}
+{% endif %}
 {% endblock %}
