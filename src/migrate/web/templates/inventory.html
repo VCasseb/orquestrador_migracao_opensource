@@ -17,20 +17,31 @@
       <p class="text-slate-400 mt-1 text-sm">No inventory yet. Run a scan to populate.</p>
     {% endif %}
   </div>
-  <form hx-post="/inventory/scan"
-        hx-target="#inventory-table"
-        hx-swap="innerHTML"
-        hx-indicator="#scan-indicator">
-    <button name="source" value="auto"
-            class="px-4 py-2 text-sm rounded bg-accent-600 hover:bg-accent-700 text-ink-950 font-medium transition-colors">
-      Scan now
-    </button>
-    <button name="source" value="sample" type="submit"
-            class="ml-2 px-4 py-2 text-sm rounded bg-ink-800 border border-ink-700 hover:bg-ink-700 transition-colors">
-      Load sample data
+  <div class="flex items-center gap-2">
+    <form hx-post="/inventory/scan"
+          hx-target="#inventory-table"
+          hx-swap="innerHTML"
+          hx-indicator="#scan-indicator"
+          class="flex items-center gap-2">
+      <button name="source" value="auto"
+              class="px-4 py-2 text-sm rounded bg-accent-600 hover:bg-accent-700 text-ink-950 font-medium transition-colors">
+        Scan now
+      </button>
+      <button name="source" value="sample" type="submit"
+              class="px-4 py-2 text-sm rounded bg-ink-800 border border-ink-700 hover:bg-ink-700 transition-colors">
+        Load sample data
+      </button>
+    </form>
+    <button hx-post="/inventory/clear-cache"
+            hx-target="#inventory-table"
+            hx-swap="innerHTML"
+            hx-confirm="Clear LOCAL cache only? This deletes .migrate/inventory.yaml so the next 'Scan now' refetches from BigQuery. Your BQ tables, datasets, and Databricks targets are NOT touched."
+            class="px-3 py-2 text-sm rounded bg-ink-800 border border-amber-700/40 hover:bg-amber-950/30 text-amber-300 transition-colors"
+            title="Delete the local .migrate/inventory.yaml so the next scan refetches everything from BigQuery. Does NOT modify BigQuery in any way.">
+      Clear local cache
     </button>
     <span id="scan-indicator" class="htmx-indicator ml-3 text-xs text-accent-500">Scanning…</span>
-  </form>
+  </div>
 </div>
 
 <form class="mb-4 grid grid-cols-6 gap-3 bg-ink-900 border border-ink-700 rounded-lg p-4"

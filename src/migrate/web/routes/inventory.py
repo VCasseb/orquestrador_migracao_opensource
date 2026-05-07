@@ -50,6 +50,39 @@ def attach(app: FastAPI, templates: Jinja2Templates) -> None:
             },
         )
 
+    @app.post("/inventory/clear-cache")
+    def inventory_clear_cache(request: Request):
+        """Delete the local .migrate/inventory.yaml ONLY. Does not touch BigQuery,
+        Databricks, or anything else. After clearing, click 'Scan now' to refetch."""
+        from pathlib import Path
+        from migrate.core.state.audit import log_action
+        deleted: list[str] = []
+        for p in [
+            Path(".migrate/inventory.yaml"),
+            Path(".migrate/catalog/"),
+        ]:
+            if p.is_file():
+                p.unlink()
+                deleted.append(str(p))
+            elif p.is_dir():
+                import shutil
+                shutil.rmtree(p)
+                deleted.append(str(p))
+        log_action("clear_inventory_cache", payload={"deleted": deleted})
+        return templates.TemplateResponse(
+            request,
+            "_inventory_table.html",
+            {
+                "inv": None,
+                "selected": load_selection(),
+                "humanize_bytes": _humanize_bytes,
+                "humanize_count": _humanize_count,
+                "filter": {},
+                "error": None,
+                "cache_cleared": True,
+            },
+        )
+
     @app.post("/inventory/scan")
     def inventory_scan(request: Request, source: str = Form("auto")):
         use_sample = source == "sample"

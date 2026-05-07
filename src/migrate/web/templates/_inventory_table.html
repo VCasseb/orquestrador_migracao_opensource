@@ -1,3 +1,9 @@
+{% if cache_cleared %}
+  <div class="mb-4 p-3 rounded bg-emerald-950/30 border border-emerald-800/40 text-emerald-300 text-sm">
+    ✓ Local cache cleared. Click <strong>Scan now</strong> to refetch from BigQuery (BQ tables were not touched).
+  </div>
+{% endif %}
+
 {% if error %}
   <div class="mb-4 p-3 rounded bg-rose-950/40 border border-rose-800/40 text-rose-300 text-sm">
     {{ error }}
