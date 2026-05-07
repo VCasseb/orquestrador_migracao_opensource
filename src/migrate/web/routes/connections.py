@@ -247,3 +247,15 @@ def attach(app: FastAPI, templates: Jinja2Templates) -> None:
             request, "_llm_active_pill.html",
             {"state": current_state()},
         )
+
+    @app.post("/connections/llm/select")
+    def select_llm(request: Request, provider: str = Form(...)):
+        """Pick a single active LLM provider — sets LLM_PROVIDER in .env and
+        returns the selected provider's config card to swap into the slot."""
+        if provider not in ("anthropic", "openai", "gemini", "bedrock"):
+            return HTMLResponse(f"<div class='text-rose-400'>Unknown provider: {provider}</div>", status_code=400)
+        update_env({"LLM_PROVIDER": provider})
+        return templates.TemplateResponse(
+            request, f"_card_{provider}.html",
+            {"state": current_state()},
+        )

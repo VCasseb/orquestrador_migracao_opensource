@@ -1,9 +1,8 @@
-<div class="bg-ink-900 border {% if state.openai.active %}border-green-700/40{% else %}border-ink-700{% endif %} rounded-lg overflow-hidden">
+<div class="bg-ink-900 border border-green-700/40 rounded-lg overflow-hidden">
   <div class="px-6 py-4 border-b border-ink-700 flex items-center justify-between">
     <div class="flex items-center gap-3">
       <div class="w-2 h-2 rounded-full {% if state.openai.has_key %}bg-emerald-500{% else %}bg-slate-600{% endif %}"></div>
       <h2 class="font-semibold text-slate-100">OpenAI <span class="text-xs text-slate-500 font-normal">(GPT)</span></h2>
-      {% if state.openai.active %}<span class="text-xs px-2 py-0.5 rounded bg-green-950/40 text-green-300">● active</span>{% endif %}
     </div>
     {% if result and result.saved %}<span class="text-xs text-emerald-400">Saved</span>{% endif %}
   </div>
@@ -43,14 +42,6 @@
               class="px-4 py-2 text-sm rounded bg-accent-600 hover:bg-accent-700 text-ink-950 font-medium transition-colors">
         Save
       </button>
-      {% if not state.openai.active %}
-        <button type="button"
-                hx-post="/connections/llm/active" hx-vals='{"provider": "openai"}'
-                hx-target="#llm-active-pill" hx-swap="outerHTML"
-                class="px-3 py-2 text-xs rounded bg-green-950/40 border border-green-700/40 text-green-300 hover:bg-green-900/40">
-          Make active
-        </button>
-      {% endif %}
       <div id="test-result-openai" class="flex-1"></div>
     </div>
   </form>

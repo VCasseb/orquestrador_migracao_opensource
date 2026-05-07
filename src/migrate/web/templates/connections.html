@@ -12,12 +12,34 @@
   <div id="card-databricks">{% include "_card_databricks.html" %}</div>
   {% include "_card_aws.html" %}
 
-  <h2 class="text-xs uppercase tracking-wider text-slate-500 mt-6">LLM provider — pick ONE active</h2>
-  <div id="llm-active-pill">{% include "_llm_active_pill.html" %}</div>
+  <h2 class="text-xs uppercase tracking-wider text-slate-500 mt-6">AI engine — pick one</h2>
 
-  <div id="card-openai">{% include "_card_openai.html" %}</div>
-  <div id="card-bedrock">{% include "_card_bedrock.html" %}</div>
-  <div id="card-gemini">{% include "_card_gemini.html" %}</div>
-  <div id="card-anthropic">{% include "_card_anthropic.html" %}</div>
+  <div class="bg-ink-900 border border-ink-700 rounded-lg p-4">
+    <label class="block text-xs uppercase tracking-wider text-slate-500 mb-2">Active engine</label>
+    <select name="provider"
+            hx-post="/connections/llm/select"
+            hx-target="#llm-card-slot"
+            hx-swap="innerHTML"
+            hx-trigger="change"
+            class="w-full bg-ink-800 border border-ink-700 rounded px-3 py-2.5 text-sm focus:border-accent-500 focus:outline-none">
+      {% set options = [
+        ('anthropic', 'Anthropic (Claude direct)'),
+        ('openai',    'OpenAI (GPT)'),
+        ('gemini',    'Google Gemini'),
+        ('bedrock',   'AWS Bedrock (Claude on AWS)'),
+      ] %}
+      {% for value, label in options %}
+        <option value="{{ value }}" {% if state.active_llm == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <div class="text-xs text-slate-500 mt-2">
+      The selected engine will be used for ALL conversion calls (DAGs, notebooks, SQL fallback).
+      Selecting from this list saves the choice to <code>LLM_PROVIDER</code> in <code>.env</code>.
+    </div>
+  </div>
+
+  <div id="llm-card-slot">
+    {% include "_card_" + state.active_llm + ".html" %}
+  </div>
 </div>
 {% endblock %}
