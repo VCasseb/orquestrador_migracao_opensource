@@ -1,0 +1,18 @@
+{% set sc = {'pending': 'slate', 'uploading': 'cyan', 'completed': 'emerald', 'failed': 'rose', 'skipped': 'amber'}.get(state.status, 'slate') %}
+<div class="px-4 py-3 bg-ink-800/50 border-l-2 border-{{ sc }}-700">
+  <div class="flex items-center gap-3">
+    <span class="text-xs px-1.5 py-0.5 rounded bg-{{ sc }}-950/40 text-{{ sc }}-300">{{ state.status }}</span>
+    <span class="text-xs text-slate-300 font-mono">{{ state.name }}</span>
+    <span class="text-xs text-slate-500">→ {{ state.target_path }}</span>
+  </div>
+  {% if state.steps_log %}
+    <ul class="mt-2 space-y-0.5 text-xs">
+      {% for step in state.steps_log %}
+        <li class="text-slate-500">· {{ step.step }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+  {% if state.errors %}
+    <div class="mt-2 text-xs text-rose-300">{% for e in state.errors %}<div>✗ {{ e }}</div>{% endfor %}</div>
+  {% endif %}
+</div>

@@ -1,0 +1,17 @@
+name: marketing_attribution_v3
+source_type: vertex_notebook
+target_platform: databricks
+status: completed
+mode: sample
+local_path: .migrate/conversions/vertex_notebook_marketing_attribution_v3.py
+target_path: /Workspace/migration/notebooks/marketing_attribution_v3
+started_at: '2026-05-07T20:35:09.005779Z'
+completed_at: '2026-05-07T20:35:09.513177Z'
+last_step: simulated upload OK
+input_hash: sha256:def
+errors: []
+steps_log:
+- step: would upload to /Workspace/migration/notebooks/marketing_attribution_v3
+  ts: '2026-05-07T20:35:09.006300+00:00'
+- step: simulated upload OK
+  ts: '2026-05-07T20:35:09.511891+00:00'

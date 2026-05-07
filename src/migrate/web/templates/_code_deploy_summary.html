@@ -1,0 +1,16 @@
+<div class="px-6 py-4 border-b border-ink-700 bg-ink-800/30">
+  <h3 class="font-semibold text-slate-200 text-sm">Bulk deploy result <span class="text-xs text-slate-500 font-normal">(mode: {{ mode }})</span></h3>
+  <div class="mt-2 grid grid-cols-1 gap-1">
+    {% for r in results %}
+      {% set sc = {'completed': 'emerald', 'failed': 'rose', 'skipped': 'amber'}.get(r.status, 'slate') %}
+      <div class="text-xs flex items-center gap-2">
+        <span class="px-1.5 py-0.5 rounded bg-{{ sc }}-950/40 text-{{ sc }}-300">{{ r.status }}</span>
+        <span class="font-mono text-slate-300">{{ r.source_type }} · {{ r.name }}</span>
+      </div>
+    {% endfor %}
+    {% for e in errors %}
+      <div class="text-xs text-rose-300 font-mono">✗ {{ e }}</div>
+    {% endfor %}
+  </div>
+  <div class="mt-2 text-xs text-slate-500">{{ results|length }} successful · {{ errors|length }} error(s) · refresh page to see updated status column</div>
+</div>
