@@ -1,0 +1,7 @@
+<button hx-post="/inventory/toggle"
+        hx-vals='{"item": "{{ item }}"}'
+        hx-swap="outerHTML"
+        class="text-xs px-2 py-1 rounded border transition-colors
+               {% if chosen %}bg-accent-600 border-accent-600 text-ink-950 font-medium hover:bg-accent-700{% else %}border-ink-700 text-slate-400 hover:border-accent-600 hover:text-accent-500{% endif %}">
+  {% if chosen %}✓ in plan{% else %}+ add{% endif %}
+</button>

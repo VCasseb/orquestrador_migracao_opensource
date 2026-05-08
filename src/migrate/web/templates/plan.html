@@ -1,36 +1,62 @@
 {% extends "base.html" %}
 {% block title %}Plan Waves · migrate{% endblock %}
 {% block content %}
-<div class="mb-6">
+<div class="mb-4">
   <h1 class="text-2xl font-semibold text-slate-100">Plan Waves</h1>
   <p class="text-slate-400 mt-1 text-sm">
-    Tables marked from <a href="/inventory" class="text-accent-500 hover:underline">inventory</a> are organized into dependency-ordered waves.
-    Wave 1 = leaf tables (no upstream in selection); each subsequent wave depends only on previous waves.
+    Items marked from <a href="/inventory" class="text-accent-500 hover:underline">Inventory</a>
+    are organized into dependency-ordered waves: each wave depends only on previous waves.
+    For notebooks, this follows the <strong>medallion chain</strong> (raw → bronze → silver → gold).
   </p>
 </div>
 
+<!-- kind tabs -->
+<div class="border-b border-ink-700 mb-4 flex gap-4 text-sm">
+  {% set kinds = [
+    ('notebook', 'notebook',  'Notebooks',           per_kind['notebook']|length),
+    ('dag',      'git-merge', 'DAGs',                per_kind['dag']|length),
+    ('table',    'table-2',   'Tables (legacy)',     per_kind['table']|length),
+  ] %}
+  {% for k, icon, label, count in kinds %}
+    <a href="/plan?kind={{ k }}{% if include_upstream %}&include_upstream=1{% endif %}"
+       class="py-2 border-b-2 transition-colors flex items-center gap-2
+              {% if kind == k %}border-accent-500 text-accent-500{% else %}border-transparent text-slate-400 hover:text-slate-200{% endif %}">
+      <i data-lucide="{{ icon }}" class="w-4 h-4"></i>
+      <span>{{ label }}</span>
+      <span class="text-xs text-slate-500">({{ count }} selected)</span>
+    </a>
+  {% endfor %}
+</div>
+
 <form class="mb-4 flex gap-3 items-center bg-ink-900 border border-ink-700 rounded-lg p-3" method="get" action="/plan">
+  <input type="hidden" name="kind" value="{{ kind }}" />
   <label class="flex items-center gap-2 text-sm text-slate-300">
     <input type="checkbox" name="include_upstream" value="1" {% if include_upstream %}checked{% endif %}
            onchange="this.form.submit()" class="accent-accent-500" />
     <span>Auto-include upstream chain</span>
   </label>
   <span class="text-xs text-slate-500">
-    Pulls every dependency (raw → silver → gold) when you select a derived table.
-    Off = strict mode, only what you marked.
+    {% if kind == "notebook" %}
+      Adds the notebook(s) that produce the tables your selected notebooks read.
+    {% elif kind == "dag" %}
+      Adds the DAG(s) that produce the tables your selected DAGs read.
+    {% else %}
+      Pulls every dependency table.
+    {% endif %}
+    Off = strict mode.
   </span>
 </form>
 
 <div class="grid grid-cols-4 gap-4 mb-6">
   <div class="bg-ink-900 border border-ink-700 rounded-lg p-4">
-    <div class="text-xs uppercase tracking-wider text-slate-500">Selected</div>
-    <div class="text-2xl font-semibold text-slate-100 mt-1">{{ selected|length }}</div>
+    <div class="text-xs uppercase tracking-wider text-slate-500">Selected ({{ kind }})</div>
+    <div class="text-2xl font-semibold text-slate-100 mt-1">{{ per_kind[kind]|length }}</div>
     <div class="text-xs text-slate-500 mt-1">user-marked</div>
   </div>
   <div class="bg-ink-900 border border-ink-700 rounded-lg p-4">
     <div class="text-xs uppercase tracking-wider text-slate-500">Auto-included</div>
     <div class="text-2xl font-semibold text-accent-500 mt-1">{{ preview.auto_included|length if preview else 0 }}</div>
-    <div class="text-xs text-slate-500 mt-1">pulled from lineage</div>
+    <div class="text-xs text-slate-500 mt-1">pulled from chain</div>
   </div>
   <div class="bg-ink-900 border border-ink-700 rounded-lg p-4">
     <div class="text-xs uppercase tracking-wider text-slate-500">Waves</div>
@@ -48,23 +74,24 @@
 <div class="mb-4 px-4 py-3 bg-amber-950/20 border border-amber-800/30 rounded-lg">
   <div class="text-xs uppercase tracking-wider text-amber-400 mb-1">⚠ Missing upstream ({{ preview.missing_upstream|length }})</div>
   <p class="text-xs text-amber-200 mb-1">
-    The chain references these objects but they're not in the current inventory. Either rescan with broader scope, or accept that they remain external in the target.
+    {{ kind|capitalize }}s reference these objects but no notebook/DAG in the inventory writes them
+    (likely external — manual or 3rd-party loads).
   </p>
   <div class="flex flex-wrap gap-1.5 mt-1">
-    {% for u in preview.missing_upstream %}
-      <code class="text-xs px-1.5 py-0.5 rounded bg-amber-950/40 text-amber-300">{{ u }}</code>
-    {% endfor %}
+    {% for u in preview.missing_upstream %}<code class="text-xs px-1.5 py-0.5 rounded bg-amber-950/40 text-amber-300">{{ u }}</code>{% endfor %}
   </div>
 </div>
 {% endif %}
 
 {% if preview %}
+{% set _layer_color = {'raw': 'slate', 'bronze': 'amber', 'silver': 'cyan', 'gold': 'yellow'} %}
 <div class="bg-ink-900 border border-ink-700 rounded-lg overflow-hidden mb-6">
   <div class="px-6 py-3 border-b border-ink-700 flex items-center justify-between">
-    <h2 class="font-semibold text-slate-100">Wave preview</h2>
+    <h2 class="font-semibold text-slate-100">Wave preview ({{ kind }})</h2>
     <form hx-post="/plan/save" hx-target="#save-result" hx-swap="innerHTML" class="flex gap-2 items-center">
+      <input type="hidden" name="kind" value="{{ kind }}" />
       <input type="hidden" name="include_upstream" value="{{ '1' if include_upstream else '' }}" />
-      <input name="plan_name" type="text" placeholder="plan-name (e.g., sprint-1)"
+      <input name="plan_name" type="text" placeholder="plan-name (e.g., cartoes-q2)"
              class="bg-ink-800 border border-ink-700 rounded px-3 py-1.5 text-sm w-48" required />
       <button class="px-3 py-1.5 text-sm rounded bg-accent-600 hover:bg-accent-700 text-ink-950 font-medium">Save plan</button>
     </form>
@@ -76,28 +103,36 @@
       <div class="flex items-center gap-3 mb-3">
         <div class="w-8 h-8 rounded-full bg-accent-600 text-ink-950 font-bold flex items-center justify-center text-sm">{{ w.index }}</div>
         <div class="font-semibold text-slate-200">Wave {{ w.index }}</div>
-        <div class="text-xs text-slate-500">{{ w.items|length }} table(s)</div>
+        <div class="text-xs text-slate-500">{{ w.items|length }} item(s)</div>
         {% set selected_in = w.items | selectattr('origin', 'equalto', 'selected') | list | length %}
         {% set auto_in = w.items | selectattr('origin', 'equalto', 'auto-included') | list | length %}
         {% if auto_in %}
           <div class="text-xs">
             <span class="text-slate-300">{{ selected_in }} selected</span>
             <span class="text-slate-500 mx-1">·</span>
-            <span class="text-accent-500">{{ auto_in }} auto-included</span>
+            <span class="text-accent-500">{{ auto_in }} auto</span>
           </div>
         {% endif %}
       </div>
       <div class="grid grid-cols-2 gap-2">
         {% for it in w.items %}
-        <div class="bg-ink-800 border {% if it.origin == 'selected' %}border-accent-600/40{% else %}border-ink-700{% endif %} rounded px-3 py-2 text-sm flex items-center justify-between gap-2">
-          <div class="min-w-0">
-            <div class="font-mono text-slate-300 text-xs truncate">{{ it.fqn }}</div>
-            <div class="text-xs text-slate-500 mt-0.5">{{ it.type }} · {{ it.complexity }} · {{ it.heat }}</div>
+        {% set lyc = _layer_color.get(it.layer, 'slate') %}
+        <div class="bg-ink-800 border {% if it.origin == 'selected' %}border-accent-600/40{% else %}border-ink-700{% endif %} rounded px-3 py-2 text-sm">
+          <div class="flex items-center justify-between gap-2">
+            <div class="min-w-0 flex-1">
+              <div class="font-mono text-slate-200 text-xs truncate">{{ it.fqn }}</div>
+              <div class="text-xs text-slate-500 mt-0.5 flex items-center gap-2">
+                {% if it.layer %}<span class="px-1.5 py-0.5 rounded bg-{{ lyc }}-950/40 text-{{ lyc }}-300 font-mono text-[10px] uppercase">{{ it.layer }}</span>{% endif %}
+                <span>{{ it.type }}</span>
+                {% if it.origin == 'selected' %}<span class="text-accent-500">★</span>{% else %}<span class="text-slate-500">↑ auto</span>{% endif %}
+              </div>
+            </div>
           </div>
-          {% if it.origin == 'selected' %}
-            <span class="text-xs px-1.5 py-0.5 rounded bg-accent-950/40 text-accent-500 flex-shrink-0">★ marked</span>
-          {% else %}
-            <span class="text-xs px-1.5 py-0.5 rounded bg-slate-800 text-slate-500 flex-shrink-0" title="Auto-included from lineage">↑ auto</span>
+          {% if it.reads or it.writes %}
+            <div class="mt-1.5 text-[11px] text-slate-500 space-y-0.5">
+              {% if it.reads %}<div>reads: <code class="text-slate-400">{{ it.reads|join(", ") }}</code></div>{% endif %}
+              {% if it.writes %}<div>writes: <code class="text-cyan-400">{{ it.writes|join(", ") }}</code></div>{% endif %}
+            </div>
           {% endif %}
         </div>
         {% endfor %}
@@ -108,9 +143,12 @@
 </div>
 {% else %}
 <div class="bg-ink-900 border border-ink-700 rounded-lg p-12 text-center">
-  <div class="text-4xl mb-3 opacity-40">📝</div>
-  <h2 class="text-lg font-semibold text-slate-200">Nothing selected yet</h2>
-  <p class="text-slate-500 mt-2">Pick tables in <a href="/inventory" class="text-accent-500 hover:underline">Inventory</a> to build a wave plan.</p>
+  <div class="text-3xl mb-3 opacity-40"><i data-lucide="git-merge" class="inline w-8 h-8"></i></div>
+  <h2 class="text-lg font-semibold text-slate-200">Nothing selected for {{ kind }}s</h2>
+  <p class="text-slate-500 mt-2 text-sm">
+    Open <a href="/inventory?kind={{ kind }}" class="text-accent-500 hover:underline">Inventory · {{ kind }}s</a>
+    and click <span class="text-accent-500">+ add</span> on items to build a wave plan.
+  </p>
 </div>
 {% endif %}
 

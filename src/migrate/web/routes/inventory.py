@@ -35,7 +35,7 @@ def _humanize_count(n: int | None) -> str:
 def attach(app: FastAPI, templates: Jinja2Templates) -> None:
 
     @app.get("/inventory", response_class=HTMLResponse)
-    def inventory_page(request: Request, kind: str = "notebook"):
+    def inventory_page(request: Request, kind: str = "notebook", layer: str = ""):
         inv = load_inventory()
         selected = load_selection()
         return templates.TemplateResponse(
@@ -44,11 +44,21 @@ def attach(app: FastAPI, templates: Jinja2Templates) -> None:
             {
                 "active": "inventory",
                 "kind": kind,
+                "layer": layer,
                 "inv": inv,
                 "selected": selected,
                 "humanize_bytes": _humanize_bytes,
                 "humanize_count": _humanize_count,
             },
+        )
+
+    @app.post("/inventory/toggle")
+    def inventory_toggle_item(request: Request, item: str = Form(...)):
+        from migrate.core.state.selection import toggle
+        chosen = toggle(item)
+        return templates.TemplateResponse(
+            request, "_select_item_button.html",
+            {"item": item, "chosen": chosen},
         )
 
     @app.post("/inventory/clear-cache")
