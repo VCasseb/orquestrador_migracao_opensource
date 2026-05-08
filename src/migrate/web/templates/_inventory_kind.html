@@ -23,13 +23,13 @@
       <i data-lucide="upload" class="w-4 h-4 text-slate-500 flex-shrink-0"></i>
       <span class="text-slate-400 mr-1">Upload notebooks manually</span>
       <input type="hidden" name="kind" value="notebook" />
-      <input type="file" name="files" multiple accept=".py,.ipynb"
+      <input type="file" name="files" multiple accept=".py,.ipynb,.zip"
              class="text-xs text-slate-300 file:mr-2 file:px-3 file:py-1 file:bg-ink-800 file:border file:border-ink-700 file:rounded file:text-slate-300 file:cursor-pointer hover:file:bg-ink-700" />
       <button type="submit"
               class="px-3 py-1 text-xs rounded bg-accent-600 hover:bg-accent-700 text-ink-950 font-medium">
         Upload &amp; parse
       </button>
-      <span class="text-slate-500 ml-2 text-[11px]">Accepts <code>.py</code> + <code>.ipynb</code> · same name replaces</span>
+      <span class="text-slate-500 ml-2 text-[11px]">Accepts <code>.py</code> · <code>.ipynb</code> · <code>.zip</code> (auto-extracted) · same name replaces</span>
     </form>
     <div id="upload-result-notebook" class="mt-2"></div>
   </div>
@@ -138,13 +138,13 @@
       <i data-lucide="upload" class="w-4 h-4 text-slate-500 flex-shrink-0"></i>
       <span class="text-slate-400 mr-1">Upload Airflow DAGs manually</span>
       <input type="hidden" name="kind" value="dag" />
-      <input type="file" name="files" multiple accept=".py"
+      <input type="file" name="files" multiple accept=".py,.zip"
              class="text-xs text-slate-300 file:mr-2 file:px-3 file:py-1 file:bg-ink-800 file:border file:border-ink-700 file:rounded file:text-slate-300 file:cursor-pointer hover:file:bg-ink-700" />
       <button type="submit"
               class="px-3 py-1 text-xs rounded bg-accent-600 hover:bg-accent-700 text-ink-950 font-medium">
         Upload &amp; parse
       </button>
-      <span class="text-slate-500 ml-2 text-[11px]">Accepts <code>.py</code> · DAG() detected via AST · same name replaces</span>
+      <span class="text-slate-500 ml-2 text-[11px]">Accepts <code>.py</code> · <code>.zip</code> (auto-extracted) · DAG() detected via AST · same name replaces</span>
     </form>
     <div id="upload-result-dag" class="mt-2"></div>
   </div>

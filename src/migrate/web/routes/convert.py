@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import io
+import zipfile
+from pathlib import Path
+
 from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
 from migrate.core.convert.runner import (
@@ -115,6 +119,102 @@ def attach(app: FastAPI, templates: Jinja2Templates) -> None:
                 "extra": {"type": t.type, "source_kind": t.source_kind},
             })
         return JSONResponse({"error": f"Unknown kind: {kind}"}, status_code=400)
+
+    _CONV_BASE = Path(".migrate/conversions").resolve()
+
+    def _safe_under_conversions(p: Path) -> bool:
+        try:
+            return p.resolve().is_relative_to(_CONV_BASE)
+        except Exception:
+            return False
+
+    @app.get("/convert/download")
+    def convert_download(file: str):
+        """Download a single converted artifact (file path must be under .migrate/conversions/)."""
+        p = Path(file)
+        if not p.exists():
+            return JSONResponse({"error": "not found"}, status_code=404)
+        if not _safe_under_conversions(p):
+            return JSONResponse({"error": "path traversal"}, status_code=403)
+        return FileResponse(
+            path=str(p),
+            media_type="application/octet-stream",
+            filename=p.name,
+        )
+
+    @app.get("/convert/download-all")
+    def convert_download_all(kind: str = ""):
+        """Bundle every converted artifact (or filtered by kind) into a single zip."""
+        if not _CONV_BASE.exists():
+            return JSONResponse({"error": "no conversions to download"}, status_code=404)
+
+        prefixes = {
+            "dag": ("airflow_dag_",),
+            "notebook": ("vertex_notebook_",),
+            "table": (),  # legacy table conversions: filename pattern is "<fqn>.{sql,ddl.sql,notebook.py,meta.yaml}"
+            "": (),
+        }
+        wanted_prefixes = prefixes.get(kind, ())
+
+        buf = io.BytesIO()
+        count = 0
+        with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for p in sorted(_CONV_BASE.iterdir()):
+                if not p.is_file():
+                    continue
+                # Always skip .meta.yaml unless they explicitly chose all
+                if p.name.endswith(".meta.yaml"):
+                    continue
+                if kind in ("dag", "notebook"):
+                    if not any(p.name.startswith(prefix) for prefix in wanted_prefixes):
+                        continue
+                if kind == "table":
+                    # Anything NOT prefixed with airflow_dag_ or vertex_notebook_
+                    if p.name.startswith(("airflow_dag_", "vertex_notebook_")):
+                        continue
+                zf.write(p, arcname=p.name)
+                count += 1
+
+        if count == 0:
+            return JSONResponse({"error": "nothing matched the filter"}, status_code=404)
+
+        buf.seek(0)
+        suffix = f"-{kind}" if kind else ""
+        filename = f"migrate-converted{suffix}.zip"
+        return StreamingResponse(
+            buf, media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    @app.post("/convert/save-edited")
+    def convert_save_edited(file: str = Form(...), content: str = Form(...)):
+        """Persist edits made on the right-pane Monaco editor back to the local artifact."""
+        p = Path(file)
+        if not _safe_under_conversions(p):
+            return JSONResponse({"error": "path traversal"}, status_code=403)
+        if not p.exists():
+            return JSONResponse({"error": "not found"}, status_code=404)
+        try:
+            p.write_text(content)
+        except Exception as e:
+            return JSONResponse({"error": f"write failed: {e}"}, status_code=500)
+
+        # Update the meta.yaml's converted_code + output_sha if a meta exists
+        try:
+            import yaml
+            from migrate.core.state.audit import hash_payload, log_action
+            base = p.stem
+            meta_path = p.parent / f"{base}.meta.yaml"
+            if meta_path.exists():
+                meta = yaml.safe_load(meta_path.read_text()) or {}
+                meta["converted_code"] = content
+                meta["output_sha"] = hash_payload(content)
+                meta_path.write_text(yaml.safe_dump(meta, sort_keys=False))
+            log_action("convert_edit_saved", fqn=p.stem, payload={"file": str(p), "size": len(content)})
+        except Exception:
+            pass
+
+        return JSONResponse({"saved": True, "size": len(content), "path": str(p)})
 
     @app.get("/convert/history-load")
     def convert_history_load(meta: str):

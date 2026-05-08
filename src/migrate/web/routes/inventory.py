@@ -175,7 +175,11 @@ def attach(app: FastAPI, templates: Jinja2Templates) -> None:
         files: list[UploadFile] = File(...),
     ):
         """Manual upload — parses uploaded files as if they came from a real scan
-        and merges into inventory.yaml. Idempotent: same name replaces existing entry."""
+        and merges into inventory.yaml. Idempotent: same name replaces existing entry.
+        Accepts .py / .ipynb files OR .zip bundles (extracted in-memory)."""
+        import io
+        import zipfile
+
         if kind not in ("notebook", "dag"):
             return HTMLResponse(f"<div class='text-rose-400 p-3'>Unsupported kind: {kind}</div>", status_code=400)
 
@@ -190,29 +194,52 @@ def attach(app: FastAPI, templates: Jinja2Templates) -> None:
         replaced: list[str] = []
         errors: list[str] = []
 
+        # Materialize uploads as a flat list of (filename, content) — handles zips inline
+        materials: list[tuple[str, str]] = []
         for f in files:
             if not f.filename:
                 continue
             try:
                 raw = await f.read()
-                content = raw.decode("utf-8", errors="replace")
             except Exception as e:
                 errors.append(f"{f.filename}: read failed — {e}")
                 continue
 
-            local_path = target_dir / f.filename
+            if f.filename.lower().endswith(".zip"):
+                try:
+                    with zipfile.ZipFile(io.BytesIO(raw)) as zf:
+                        for entry in zf.namelist():
+                            if entry.endswith("/"):
+                                continue
+                            base = entry.split("/")[-1]
+                            if not base or base.startswith("."):
+                                continue
+                            try:
+                                materials.append((base, zf.read(entry).decode("utf-8", errors="replace")))
+                            except Exception as e:
+                                errors.append(f"{entry} (in {f.filename}): {e}")
+                except Exception as e:
+                    errors.append(f"{f.filename}: invalid zip — {e}")
+            else:
+                try:
+                    materials.append((f.filename, raw.decode("utf-8", errors="replace")))
+                except Exception as e:
+                    errors.append(f"{f.filename}: decode failed — {e}")
+
+        for filename, content in materials:
+            local_path = target_dir / filename
             try:
                 local_path.write_text(content)
             except Exception as e:
-                errors.append(f"{f.filename}: write failed — {e}")
+                errors.append(f"{filename}: write failed — {e}")
                 continue
 
             try:
                 if kind == "notebook":
-                    if not f.filename.lower().endswith((".py", ".ipynb")):
-                        errors.append(f"{f.filename}: only .py and .ipynb supported")
+                    if not filename.lower().endswith((".py", ".ipynb")):
+                        errors.append(f"{filename}: only .py and .ipynb supported (skipped)")
                         continue
-                    nb = parse_notebook_file(f.filename, content, location=str(local_path))
+                    nb = parse_notebook_file(filename, content, location=str(local_path))
                     existing = next((i for i, x in enumerate(inv.notebooks) if x.name == nb.name), None)
                     if existing is not None:
                         inv.notebooks[existing] = nb
@@ -221,12 +248,12 @@ def attach(app: FastAPI, templates: Jinja2Templates) -> None:
                         inv.notebooks.append(nb)
                         added.append(nb.name)
                 else:  # dag
-                    if not f.filename.lower().endswith(".py"):
-                        errors.append(f"{f.filename}: DAG must be .py")
+                    if not filename.lower().endswith(".py"):
+                        errors.append(f"{filename}: DAG must be .py (skipped)")
                         continue
                     dag = parse_dag_file(str(local_path), content)
                     if not dag:
-                        errors.append(f"{f.filename}: no DAG() found in source")
+                        errors.append(f"{filename}: no DAG() found in source")
                         continue
                     existing = next((i for i, x in enumerate(inv.dags) if x.name == dag.name), None)
                     if existing is not None:
@@ -236,7 +263,7 @@ def attach(app: FastAPI, templates: Jinja2Templates) -> None:
                         inv.dags.append(dag)
                         added.append(dag.name)
             except Exception as e:
-                errors.append(f"{f.filename}: parse failed — {e}")
+                errors.append(f"{filename}: parse failed — {e}")
 
         save_inventory(inv)
         return templates.TemplateResponse(

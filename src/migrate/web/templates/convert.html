@@ -108,7 +108,13 @@
   <span class="text-slate-500">model:</span><code id="meta-model" class="text-slate-300">—</code>
   <span class="text-slate-500">target:</span><code id="meta-target" class="text-slate-300">—</code>
   <span id="meta-status-wrap"></span>
-  <a href="#" id="meta-copy" class="ml-auto text-accent-500 hover:underline">Copy converted</a>
+  <div class="ml-auto flex items-center gap-3">
+    <a id="meta-download" href="#" download
+       class="text-accent-500 hover:underline flex items-center gap-1">
+      <i data-lucide="download" class="w-3 h-3"></i><span>Download</span>
+    </a>
+    <a href="#" id="meta-copy" class="text-accent-500 hover:underline">Copy converted</a>
+  </div>
 </div>
 
 <!-- Side-by-side editors -->
@@ -131,7 +137,20 @@
         <i data-lucide="sparkles" class="w-3.5 h-3.5 text-accent-500"></i>
         <span class="text-accent-500 uppercase tracking-wider font-semibold">Converted ({{ target_platform }})</span>
       </div>
-      <span id="convert-status" class="text-slate-500 text-[11px]">click <strong>Convert</strong> to generate</span>
+      <div class="flex items-center gap-3">
+        <span id="convert-status" class="text-slate-500 text-[11px]">click <strong>Convert</strong> to generate</span>
+        <button id="edit-toggle" type="button"
+                class="hidden text-slate-400 hover:text-accent-500 flex items-center gap-1"
+                title="Toggle edit mode">
+          <i data-lucide="pencil" class="w-3.5 h-3.5"></i><span id="edit-toggle-label">Edit</span>
+        </button>
+        <button id="save-edit" type="button"
+                class="hidden px-2 py-0.5 rounded bg-emerald-700 hover:bg-emerald-600 text-white flex items-center gap-1"
+                title="Save edits to local file">
+          <i data-lucide="save" class="w-3.5 h-3.5"></i><span>Save</span>
+        </button>
+        <span id="save-status" class="hidden text-emerald-400 text-[11px]"></span>
+      </div>
     </div>
     <div id="converted-editor" style="height: 64vh;"></div>
   </div>
@@ -259,6 +278,20 @@
       document.getElementById('meta-model').textContent = data.model || '—';
       document.getElementById('meta-target').textContent = data.target_path || '—';
 
+      // Wire download link to the local artifact
+      const dlBtn = document.getElementById('meta-download');
+      if (data.output_path) {
+        dlBtn.href = `/convert/download?file=${encodeURIComponent(data.output_path)}`;
+      } else {
+        dlBtn.removeAttribute('href');
+      }
+      // Stash the output_path for the edit-save flow
+      window.__currentOutputPath = data.output_path || '';
+      document.getElementById('edit-toggle').classList.remove('hidden');
+      document.getElementById('edit-toggle').dataset.editing = 'false';
+      document.getElementById('save-edit').classList.add('hidden');
+      document.getElementById('edit-toggle-label').textContent = 'Edit';
+
       const notes = data.notes || [];
       const notesBox = document.getElementById('notes-box');
       const notesList = document.getElementById('notes-list');
@@ -289,6 +322,55 @@
     navigator.clipboard.writeText(convertedEditor.getValue());
     e.target.textContent = '✓ Copied';
     setTimeout(() => e.target.textContent = 'Copy converted', 1500);
+  });
+
+  // Edit / Save flow on the right (converted) Monaco
+  const editBtn = document.getElementById('edit-toggle');
+  const saveBtn = document.getElementById('save-edit');
+  const saveStatus = document.getElementById('save-status');
+
+  editBtn.addEventListener('click', () => {
+    if (!convertedEditor) return;
+    const editing = editBtn.dataset.editing === 'true';
+    if (editing) {
+      // turn off
+      convertedEditor.updateOptions({ readOnly: true });
+      editBtn.dataset.editing = 'false';
+      document.getElementById('edit-toggle-label').textContent = 'Edit';
+      saveBtn.classList.add('hidden');
+    } else {
+      convertedEditor.updateOptions({ readOnly: false });
+      editBtn.dataset.editing = 'true';
+      document.getElementById('edit-toggle-label').textContent = 'Cancel';
+      saveBtn.classList.remove('hidden');
+      convertedEditor.focus();
+    }
+  });
+
+  saveBtn.addEventListener('click', async () => {
+    const path = window.__currentOutputPath;
+    if (!path) { alert('No output path — convert something first.'); return; }
+    saveStatus.classList.remove('hidden');
+    saveStatus.textContent = 'saving…';
+    try {
+      const fd = new FormData();
+      fd.append('file', path);
+      fd.append('content', convertedEditor.getValue());
+      const r = await fetch('/convert/save-edited', { method: 'POST', body: fd });
+      const data = await r.json();
+      if (data.error) throw new Error(data.error);
+      saveStatus.textContent = `✓ saved ${data.size} bytes`;
+      // Exit edit mode
+      convertedEditor.updateOptions({ readOnly: true });
+      editBtn.dataset.editing = 'false';
+      document.getElementById('edit-toggle-label').textContent = 'Edit';
+      saveBtn.classList.add('hidden');
+      setTimeout(() => saveStatus.classList.add('hidden'), 2500);
+    } catch (e) {
+      saveStatus.textContent = '✗ ' + e.message;
+      saveStatus.classList.remove('text-emerald-400');
+      saveStatus.classList.add('text-rose-400');
+    }
   });
 
   // History: click "Load into panes" → fetch saved meta + populate

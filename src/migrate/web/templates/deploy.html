@@ -27,16 +27,23 @@
       </div>
     </div>
     {% if saved_artifacts %}
-    <form hx-post="/deploy/code/run-all" hx-target="#bulk-deploy-result" hx-swap="innerHTML"
-          class="flex gap-2 items-center">
-      <select name="mode" class="bg-ink-800 border border-ink-700 rounded px-3 py-1.5 text-sm">
-        <option value="sample">Sample (simulated)</option>
-        <option value="execute">Execute (real upload)</option>
-      </select>
-      <button class="px-3 py-1.5 text-sm rounded bg-accent-600 hover:bg-accent-700 text-ink-950 font-medium">
-        Deploy all ({{ saved_artifacts|length }})
-      </button>
-    </form>
+    <div class="flex gap-2 items-center">
+      <a href="/convert/download-all" download
+         class="px-3 py-1.5 text-sm rounded bg-ink-800 border border-ink-700 hover:bg-ink-700 text-slate-300 inline-flex items-center gap-1.5"
+         title="Download all converted artifacts as a single .zip">
+        <i data-lucide="download" class="w-4 h-4"></i><span>Download all (.zip)</span>
+      </a>
+      <form hx-post="/deploy/code/run-all" hx-target="#bulk-deploy-result" hx-swap="innerHTML"
+            class="flex gap-2 items-center">
+        <select name="mode" class="bg-ink-800 border border-ink-700 rounded px-3 py-1.5 text-sm">
+          <option value="sample">Sample (simulated)</option>
+          <option value="execute">Execute (real upload)</option>
+        </select>
+        <button class="px-3 py-1.5 text-sm rounded bg-accent-600 hover:bg-accent-700 text-ink-950 font-medium">
+          Deploy all ({{ saved_artifacts|length }})
+        </button>
+      </form>
+    </div>
     {% endif %}
   </div>
 
@@ -89,15 +96,22 @@
             <span class="text-xs px-1.5 py-0.5 rounded bg-{{ sc }}-950/40 text-{{ sc }}-300">{{ status }}</span>
           </td>
           <td class="px-3 py-2.5 text-right">
-            <form hx-post="/deploy/code/run" hx-target="#row-result-{{ loop.index }}" hx-swap="innerHTML"
-                  class="inline-flex items-center gap-1.5">
-              <input type="hidden" name="meta_path" value="{{ entry.meta_path }}" />
-              <select name="mode" class="bg-ink-800 border border-ink-700 rounded px-2 py-1 text-xs">
-                <option value="sample">sample</option>
-                <option value="execute">execute</option>
-              </select>
-              <button class="px-2.5 py-1 text-xs rounded bg-accent-600 hover:bg-accent-700 text-ink-950 font-medium">Deploy</button>
-            </form>
+            <div class="inline-flex items-center gap-1.5">
+              <a href="/convert/download?file={{ art.output_path|urlencode }}" download
+                 class="px-2 py-1 text-xs rounded bg-ink-800 border border-ink-700 hover:bg-ink-700 text-slate-300 inline-flex items-center gap-1"
+                 title="Download this artifact">
+                <i data-lucide="download" class="w-3 h-3"></i>
+              </a>
+              <form hx-post="/deploy/code/run" hx-target="#row-result-{{ loop.index }}" hx-swap="innerHTML"
+                    class="inline-flex items-center gap-1.5">
+                <input type="hidden" name="meta_path" value="{{ entry.meta_path }}" />
+                <select name="mode" class="bg-ink-800 border border-ink-700 rounded px-2 py-1 text-xs">
+                  <option value="sample">sample</option>
+                  <option value="execute">execute</option>
+                </select>
+                <button class="px-2.5 py-1 text-xs rounded bg-accent-600 hover:bg-accent-700 text-ink-950 font-medium">Deploy</button>
+              </form>
+            </div>
           </td>
         </tr>
         <tr><td colspan="5" id="row-result-{{ loop.index }}"></td></tr>
