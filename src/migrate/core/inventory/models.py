@@ -125,6 +125,16 @@ class DAGMetadata(BaseModel):
     def referenced_notebooks(self) -> list[str]:
         return [t.notebook_uri for t in self.tasks if t.notebook_uri]
 
+    @property
+    def layer(self) -> str | None:
+        """Inferred medallion layer (raw/bronze/silver/gold/...) from the dataset
+        portion of the first written FQN."""
+        for fqn in self.writes_tables:
+            parts = fqn.split(".")
+            if len(parts) >= 2:
+                return parts[1].lower()
+        return None
+
 
 class NotebookCell(BaseModel):
     cell_type: Literal["code", "markdown", "raw"] = "code"
@@ -160,6 +170,25 @@ class NotebookMetadata(BaseModel):
         for c in self.cells:
             out.extend(c.writes_tables)
         return list(dict.fromkeys(out))
+
+    @property
+    def layer(self) -> str | None:
+        """Medallion layer (raw/bronze/silver/gold/...) inferred from writes_tables."""
+        for fqn in self.all_written_tables:
+            parts = fqn.split(".")
+            if len(parts) >= 2:
+                return parts[1].lower()
+        # fallback: try to infer from the notebook name itself ("raw.cartoes" → "raw")
+        if "." in self.name:
+            return self.name.split(".")[0].lower()
+        return None
+
+    @property
+    def entity(self) -> str:
+        """Entity name (e.g. 'cartoes' from 'gold.cartoes' or 'gold.cartoes.py')."""
+        if "." in self.name:
+            return self.name.split(".", 1)[1].replace(".py", "")
+        return self.name.replace(".py", "")
 
 
 class ScheduledQuery(BaseModel):

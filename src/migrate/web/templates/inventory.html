@@ -1,17 +1,18 @@
 {% extends "base.html" %}
 {% block title %}Inventory · migrate{% endblock %}
 {% block content %}
-<div class="mb-6 flex items-start justify-between">
+<div class="mb-4 flex items-start justify-between">
   <div>
     <h1 class="text-2xl font-semibold text-slate-100">Inventory</h1>
     {% if inv %}
       <p class="text-slate-400 mt-1 text-sm">
-        <span class="text-slate-200 font-medium">{{ inv.tables|length }}</span> objects ·
-        <span class="text-slate-200 font-medium">{{ inv.dags|length }}</span> DAGs ·
-        <span class="text-slate-200 font-medium">{{ inv.notebooks|length }}</span> notebooks ·
-        <span class="text-slate-200 font-medium">{{ inv.scheduled_queries|length }}</span> scheduled queries
-        across <span class="text-slate-200 font-medium">{{ inv.projects|length }}</span> project(s)
-        · scanned {{ inv.scanned_at.strftime('%Y-%m-%d %H:%M UTC') }}
+        Migration targets:
+        <span class="text-amber-400 font-medium">{{ inv.notebooks|length }}</span> notebooks ·
+        <span class="text-emerald-400 font-medium">{{ inv.dags|length }}</span> DAGs ·
+        <span class="text-violet-400 font-medium">{{ inv.scheduled_queries|length }}</span> scheduled queries
+        <span class="text-slate-600 mx-1">·</span>
+        <span class="text-slate-500">{{ inv.tables|length }} tables (context)</span>
+        — scanned {{ inv.scanned_at.strftime('%Y-%m-%d %H:%M UTC') }}
       </p>
     {% else %}
       <p class="text-slate-400 mt-1 text-sm">No inventory yet. Run a scan to populate.</p>
@@ -24,72 +25,47 @@
           hx-indicator="#scan-indicator"
           class="flex items-center gap-2">
       <button name="source" value="auto"
-              class="px-4 py-2 text-sm rounded bg-accent-600 hover:bg-accent-700 text-ink-950 font-medium transition-colors">
-        Scan now
+              class="px-4 py-2 text-sm rounded bg-accent-600 hover:bg-accent-700 text-ink-950 font-medium transition-colors flex items-center gap-1.5">
+        <i data-lucide="refresh-cw" class="w-4 h-4"></i><span>Scan now</span>
       </button>
       <button name="source" value="sample" type="submit"
-              class="px-4 py-2 text-sm rounded bg-ink-800 border border-ink-700 hover:bg-ink-700 transition-colors">
-        Load sample data
+              class="px-4 py-2 text-sm rounded bg-ink-800 border border-ink-700 hover:bg-ink-700 transition-colors flex items-center gap-1.5">
+        <i data-lucide="flask-conical" class="w-4 h-4"></i><span>Sample</span>
       </button>
     </form>
     <button hx-post="/inventory/clear-cache"
             hx-target="#inventory-table"
             hx-swap="innerHTML"
-            hx-confirm="Clear LOCAL cache only? This deletes .migrate/inventory.yaml so the next 'Scan now' refetches from BigQuery. Your BQ tables, datasets, and Databricks targets are NOT touched."
-            class="px-3 py-2 text-sm rounded bg-ink-800 border border-amber-700/40 hover:bg-amber-950/30 text-amber-300 transition-colors"
-            title="Delete the local .migrate/inventory.yaml so the next scan refetches everything from BigQuery. Does NOT modify BigQuery in any way.">
-      Clear local cache
+            hx-confirm="Clear LOCAL cache only? This deletes .migrate/inventory.yaml. Your BQ tables and DAGs in GCS are NOT touched."
+            class="px-3 py-2 text-sm rounded bg-ink-800 border border-amber-700/40 hover:bg-amber-950/30 text-amber-300 transition-colors flex items-center gap-1.5"
+            title="Delete local cache; next Scan will refetch.">
+      <i data-lucide="trash-2" class="w-4 h-4"></i><span>Clear cache</span>
     </button>
-    <span id="scan-indicator" class="htmx-indicator ml-3 text-xs text-accent-500">Scanning…</span>
+    <span id="scan-indicator" class="htmx-indicator ml-2 text-xs text-accent-500">Scanning…</span>
   </div>
 </div>
 
-<form class="mb-4 grid grid-cols-6 gap-3 bg-ink-900 border border-ink-700 rounded-lg p-4"
-      hx-post="/inventory/filter"
-      hx-target="#inventory-table"
-      hx-swap="innerHTML"
-      hx-trigger="change, keyup delay:400ms from:input[name=search]">
-  <input type="text" name="search" placeholder="Search FQN…"
-         class="bg-ink-800 border border-ink-700 rounded px-3 py-2 text-sm" />
-  <select name="project" class="bg-ink-800 border border-ink-700 rounded px-3 py-2 text-sm">
-    <option value="">All projects</option>
-    {% if inv %}{% for p in inv.projects %}<option value="{{ p }}">{{ p }}</option>{% endfor %}{% endif %}
-  </select>
-  <select name="type" class="bg-ink-800 border border-ink-700 rounded px-3 py-2 text-sm">
-    <option value="">Any type</option>
-    <option value="TABLE">Table</option>
-    <option value="VIEW">View</option>
-    <option value="MATERIALIZED_VIEW">Materialized view</option>
-    <option value="EXTERNAL">External</option>
-  </select>
-  <select name="source_kind" class="bg-ink-800 border border-ink-700 rounded px-3 py-2 text-sm">
-    <option value="">Any source</option>
-    <option value="view">View (SQL inline)</option>
-    <option value="scheduled_query">Scheduled query</option>
-    <option value="dag_sql">DAG · SQL inline</option>
-    <option value="dag_python">DAG · Python</option>
-    <option value="dag_notebook">DAG · runs notebook</option>
-    <option value="notebook">Notebook (no DAG)</option>
-    <option value="external_gcs">External · GCS-backed</option>
-    <option value="manual">Manual / external</option>
-    <option value="unknown">Unknown</option>
-  </select>
-  <select name="complexity" class="bg-ink-800 border border-ink-700 rounded px-3 py-2 text-sm">
-    <option value="">Any complexity</option>
-    <option value="low">Low</option>
-    <option value="medium">Medium</option>
-    <option value="high">High</option>
-  </select>
-  <select name="heat" class="bg-ink-800 border border-ink-700 rounded px-3 py-2 text-sm">
-    <option value="">Any heat</option>
-    <option value="hot">Hot</option>
-    <option value="warm">Warm</option>
-    <option value="cold">Cold</option>
-  </select>
-</form>
+{% if inv %}
+<div class="border-b border-ink-700 mb-4 flex gap-4 text-sm">
+  {% set kinds = [
+    ('notebook', 'notebook',  'Notebooks',           inv.notebooks|length),
+    ('dag',      'git-merge', 'DAGs',                inv.dags|length),
+    ('table',    'table-2',   'Tables (context)',    inv.tables|length),
+  ] %}
+  {% for k, icon, label, count in kinds %}
+    <a href="/inventory?kind={{ k }}"
+       class="py-2 border-b-2 transition-colors flex items-center gap-2
+              {% if kind == k %}border-accent-500 text-accent-500{% else %}border-transparent text-slate-400 hover:text-slate-200{% endif %}">
+      <i data-lucide="{{ icon }}" class="w-4 h-4"></i>
+      <span>{{ label }}</span>
+      <span class="text-xs text-slate-500">({{ count }})</span>
+    </a>
+  {% endfor %}
+</div>
+{% endif %}
 
 <div id="inventory-table">
-  {% include "_inventory_table.html" %}
+  {% include "_inventory_kind.html" %}
 </div>
 
 <div id="detail-modal"></div>

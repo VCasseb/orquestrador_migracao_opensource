@@ -35,7 +35,7 @@ def _humanize_count(n: int | None) -> str:
 def attach(app: FastAPI, templates: Jinja2Templates) -> None:
 
     @app.get("/inventory", response_class=HTMLResponse)
-    def inventory_page(request: Request):
+    def inventory_page(request: Request, kind: str = "notebook"):
         inv = load_inventory()
         selected = load_selection()
         return templates.TemplateResponse(
@@ -43,6 +43,7 @@ def attach(app: FastAPI, templates: Jinja2Templates) -> None:
             "inventory.html",
             {
                 "active": "inventory",
+                "kind": kind,
                 "inv": inv,
                 "selected": selected,
                 "humanize_bytes": _humanize_bytes,
@@ -71,9 +72,10 @@ def attach(app: FastAPI, templates: Jinja2Templates) -> None:
         log_action("clear_inventory_cache", payload={"deleted": deleted})
         return templates.TemplateResponse(
             request,
-            "_inventory_table.html",
+            "_inventory_kind.html",
             {
                 "inv": None,
+                "kind": "notebook",
                 "selected": load_selection(),
                 "humanize_bytes": _humanize_bytes,
                 "humanize_count": _humanize_count,
@@ -84,7 +86,7 @@ def attach(app: FastAPI, templates: Jinja2Templates) -> None:
         )
 
     @app.post("/inventory/scan")
-    def inventory_scan(request: Request, source: str = Form("auto")):
+    def inventory_scan(request: Request, source: str = Form("auto"), kind: str = Form("notebook")):
         use_sample = source == "sample"
         if source == "auto":
             from migrate.core.credentials import get_env, load_env
@@ -100,9 +102,10 @@ def attach(app: FastAPI, templates: Jinja2Templates) -> None:
 
         return templates.TemplateResponse(
             request,
-            "_inventory_table.html",
+            "_inventory_kind.html",
             {
                 "inv": inv,
+                "kind": kind,
                 "selected": load_selection(),
                 "error": error,
                 "humanize_bytes": _humanize_bytes,

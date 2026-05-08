@@ -1,124 +1,169 @@
 # migrate
 
-AI-assisted framework for migrating data projects from **GCP (BigQuery)** to **Databricks/AWS**, with human-in-the-loop approval and auditable artifacts.
+AI-driven framework for migrating **GCP Airflow pipelines (Composer DAGs `.py`) and notebooks (`.ipynb` / `.py`)** to **Databricks** or **AWS** (MWAA + EMR / S3).
 
-Built for real migration teams, not slideware. Scoped explicitly:
+> **Scope, in plain words:** *we migrate **code artifacts** — the orchestration (DAGs) and the transformation logic (notebooks). We do NOT migrate table data.* BQ tables, views and scheduled queries are scanned for **lineage context only** (so you can see "this `gold.cartoes.py` notebook reads `silver.cartoes` and writes `gold.cartoes`").
 
-**In scope:** BQ tables / views / scheduled queries → Delta + Unity Catalog. Lineage discovery, SQL transpilation, schema/data load, notebook generation, semantic validation, wave-based orchestration.
+## What's migrated, what's referenced
 
-**Out of scope:** Dataflow / Beam pipelines, Pub/Sub topology, Vertex AI / ML, complex Composer DAG logic, network/IAM topology, BI dashboards.
-
-## Setup
-
-### Option A — with `uv` (recommended)
-
-```bash
-# install uv if needed: curl -LsSf https://astral.sh/uv/install.sh | sh
-git clone <repo-url>
-cd migrate
-uv sync
-uv run migrate init        # creates .migrate/config.yaml + .env
-uv run migrate web         # opens http://127.0.0.1:8000
-```
-
-### Option B — with `pip` + venv
-
-```bash
-git clone <repo-url>
-cd migrate
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
-migrate init               # creates .migrate/config.yaml + .env
-migrate web                # opens http://127.0.0.1:8000
-```
-
-After `migrate web` is running, open the **Connections** page in the browser to configure credentials (or edit `.env` directly).
-
-## What you can do — v0.3
-
-| Page | Status | Function |
+| Object | Role | Migration target |
 |---|---|---|
-| Connections | ✅ | Connect to GCP, Databricks, Anthropic with test buttons |
-| Inventory | ✅ | Scan GCP projects → tables, views; filter by project/type/complexity/heat; select for migration |
-| Lineage | ✅ | Cross-project dependency graph (cytoscape.js) with click-to-highlight upstream/downstream |
-| Plan Waves | ✅ | Topologically-ordered migration waves; save as `.migrate/plans/<name>.yaml` |
-| Convert | ✅ | sqlglot + Claude LLM fallback + Delta DDL + standardized notebook + **side-by-side Monaco diff** |
-| Validate | ✅ | Profile BQ vs Delta (row count, NULL drift, distinct, avg); synthetic mode for demos |
-| Review | ✅ | Approval queue: per-item approve/reject + bulk auto-approve filters |
-| Deploy | ✅ | Sample / dry-run / execute modes; wave-orchestrated; concurrent; resumable; idempotent |
-| Docs | ✅ | Generate Azure DevOps Wiki Markdown per table or per plan (mermaid, schema diff, audit trail) |
+| **Composer DAG** (`.py`) | First-class — primary migration target | Databricks Workflow (Asset Bundle YAML) **or** MWAA-compatible Airflow `.py` |
+| **Notebook** (`.py` / `.ipynb`) | First-class — primary migration target | Databricks notebook **or** PySpark on EMR/Glue |
+| **Table / View / Materialized View** (BQ) | Informational — to show *which notebook produces what* | Not migrated. Tables are referenced by the notebooks; data movement (federation, CTAS, Auto Loader) is OUT of scope. |
+| **Scheduled Query** (BQ DTS) | Informational + can be converted to a Databricks notebook | The SQL becomes a notebook + Workflow scheduled task |
+| **External GCS table** | Informational | Tagged with the `gs://` path so you know what files need to move (the actual GCS→S3 sync is a separate workstream — Storage Transfer Service / DataSync) |
 
-Cross-cutting:
-- **Audit log** — every action recorded in `.migrate/runs/*.jsonl` (per-FQN + global)
-- **Approval lifecycle** — `pending → approved | rejected → revoked` for conversion / validation / deployment
-- **Rollback** — undo conversion / validation / approval / deployment (deployment supports `--execute` for real DROP TABLE)
+## Mental model — the medallion chain
 
-## CLI commands
+For each entity (e.g. `cartoes`), the framework walks the **chain of `.py` notebooks** that produce each layer:
+
+```
+raw.cartoes.py    ─► writes prj.raw.cartoes
+       │
+       ▼
+bronze.cartoes.py ─► reads  prj.raw.cartoes
+                  ─► writes prj.bronze.cartoes
+       │
+       ▼
+silver.cartoes.py ─► reads  prj.bronze.cartoes
+                  ─► writes prj.silver.cartoes
+       │
+       ▼
+gold.cartoes.py   ─► reads  prj.silver.cartoes
+                  ─► writes prj.gold.cartoes  ◄── this is what stakeholders see
+```
+
+The whole chain (4 notebooks) gets converted and uploaded to the new platform. The tables are just nodes in the lineage graph that show what each notebook reads/writes.
+
+The orchestrator DAG (`cartoes_pipeline`) referencing those notebooks also gets converted (DAG `.py` → Databricks Workflow YAML or MWAA-compatible operators).
+
+## What you can do
+
+| Page | What it shows |
+|---|---|
+| **Connections** | GCP / Databricks / 4 LLM providers (Anthropic, OpenAI, Gemini, AWS Bedrock — pick one) |
+| **Inventory** | **Notebooks** + **DAGs** as primary tabs · **Tables (informational)** as a third tab showing context |
+| **Lineage** | Notebooks (📓) and DAGs (▣) as the primary nodes; tables shown as smaller annotations |
+| **Plan Waves** | Dependency-ordered batches for the chain |
+| **1. Convert** | AI-driven `.py` → `.py` / `.yaml` conversion. Side-by-side Monaco editors (source ↔ converted). Custom prompt slot. Per-conversion target override. |
+| **2. Review** | Approve / reject converted artifacts before deploy |
+| **3. Deploy** | Upload saved local artifacts to the target (Databricks Workspace via `databricks-sdk`, AWS via `boto3 s3.put_object`). Sample / execute modes. |
+| **4. Validate** | Profile source vs deployed target — runs *after* deploy on the tables produced by the migrated notebooks |
+| **Docs** | Auto-generate Azure DevOps Wiki Markdown per migrated artifact |
+
+## Setup — 3 commands
+
+### Linux / macOS
+```bash
+git clone https://github.com/VCasseb/orquestrador_migracao_opensource.git migrate
+cd migrate
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e .
+migrate init && migrate web
+```
+
+### Windows
+```cmd
+git clone https://github.com/VCasseb/orquestrador_migracao_opensource.git migrate
+cd migrate
+python -m venv .venv
+.venv\Scripts\activate
+pip install -e .
+migrate init && migrate web
+```
+
+Open `http://127.0.0.1:8000` and start at the **Connections** tab.
+
+## Configure where artifacts live
+
+In `.env`:
 
 ```bash
-migrate init                                # bootstrap .migrate/ + .env
-migrate web                                 # launch local UI
+# Where to find the artifacts to migrate (sources in GCP)
+GCP_PROJECT_IDS=acme-data-prod,acme-finance-prod,acme-mkt-prod
+GCP_COMPOSER_DAG_BUCKET=gs://us-central1-acme-composer-bucket/dags
+GCP_NOTEBOOKS_BUCKET=gs://acme-data-notebooks
+GCP_REGION=us-east-1            # or southamerica-east1, europe-west2, etc.
 
-migrate inventory --sample                  # load 14-table synthetic demo
-migrate inventory                           # scan real GCP_PROJECT_IDS
+# Where converted artifacts should go on the new platform
+TARGET_PLATFORM=databricks       # or 'aws'
+TARGET_DATABRICKS_WORKSPACE_PREFIX=/Workspace/migration
+TARGET_S3_NOTEBOOKS_PREFIX=s3://acme-data-notebooks/migration
+TARGET_MWAA_DAGS_PREFIX=s3://acme-mwaa-bucket/dags
 
-migrate plan sprint-1                       # build wave plan from selection
-migrate convert prj.ds.table                # sqlglot + LLM + DDL + notebook
-migrate validate prj.ds.table --sample      # synthetic validation
-migrate validate prj.ds.table               # real BQ vs Delta profiling
-
-migrate approve  prj.ds.table conversion -m "LGTM"
-migrate reject   prj.ds.table validation -m "row count off by 12%"
-
-migrate deploy sprint-1 --mode sample       # simulated wave deploy
-migrate deploy sprint-1 --mode dry-run      # plan only
-migrate deploy sprint-1 --mode execute --concurrency 8
-migrate deploy sprint-1 --mode execute --create-workflow
-
-migrate docs prj.ds.table                   # 1 markdown for Azure DevOps Wiki
-migrate docs --plan sprint-1                # all tables in plan + index
-
-migrate history prj.ds.table                # audit trail for one object
-migrate history -n 50                       # global recent log
-
-migrate rollback conversion prj.ds.table
-migrate rollback validation prj.ds.table
-migrate rollback approval   prj.ds.table --stage conversion
-migrate rollback deployment prj.ds.table              # dry-run plan
-migrate rollback deployment prj.ds.table --execute    # actually DROP + remove notebook
-
-migrate status                              # quick summary
+# AI engine — pick one (UI: Connections page → AI engine dropdown)
+LLM_PROVIDER=anthropic           # anthropic | openai | gemini | bedrock
+ANTHROPIC_API_KEY=sk-ant-...
+ANTHROPIC_MODEL=claude-sonnet-4-6
 ```
 
 ## Try it without any cloud credentials
 
 ```bash
 migrate init
-migrate inventory --sample            # 14 fake tables across 3 projects with realistic deps
-migrate web                           # browse Inventory, Lineage, Plan, Convert, Validate
+migrate inventory --sample      # loads a realistic medallion chain (cartoes pipeline)
+migrate web
 ```
 
-In the web UI: pick tables in Inventory → see them in Lineage → build waves in Plan → convert in Convert → run a synthetic validation.
+Sample inventory ships with:
+- 4 notebooks: `raw.cartoes`, `bronze.cartoes`, `silver.cartoes`, `gold.cartoes` (full medallion chain)
+- 1 orchestrator DAG `cartoes_pipeline` running them in sequence
+- Plus marketing/ML examples and BQ tables for context
+
+You'll see the Inventory tabs flip to **Notebooks** by default, with the chain laid out in **Lineage**.
+
+## CLI
+
+```bash
+migrate init                                        # bootstrap .migrate/ + .env
+migrate web                                         # local UI
+
+migrate inventory --sample                          # synthetic medallion chain demo
+migrate inventory                                   # scan real GCP — DAGs, notebooks, tables
+
+migrate convert dag <dag_id> --prompt "..."         # AI conversion of a Composer DAG
+migrate convert notebook <nb_id> --prompt "..."     # AI conversion of a notebook
+migrate convert table <fqn>                         # legacy SQL conversion (informational only now)
+
+migrate plan sprint-1                               # dependency-ordered waves for selected items
+migrate deploy sprint-1 --mode sample               # simulated deploy
+migrate deploy sprint-1 --mode execute --auto-validate
+
+migrate validate <fqn> --sample                     # synthetic validation
+migrate validate <fqn>                              # real BQ vs deployed target diff
+
+migrate approve / reject / history / rollback       # state machine + audit
+migrate docs <fqn> | --plan <name>                  # generate Azure DevOps wiki Markdown
+migrate status                                      # quick summary
+```
+
+## What is NOT in scope
+
+- **Data movement** (BQ → Delta, GCS → S3 bytes). Use Storage Transfer Service / DataSync for GCS→S3; let Databricks Auto Loader / federation handle the load on the target side. The framework documents what needs moving but doesn't move bytes.
+- **Networking / IAM / VPC topology**. Use Terraform.
+- **BI dashboards** (Looker, Looker Studio). Rebuild on Databricks Dashboards / QuickSight separately.
+- **Vertex AI MLOps**. Different project entirely.
 
 ## Architecture
 
 ```
 src/migrate/
-├── core/           # business logic — no UI dependencies
-├── cli.py          # typer entrypoint (CI / power users)
-└── web/            # FastAPI + Jinja + HTMX + Tailwind (local UI)
+├── core/
+│   ├── inventory/        # scanners: bq.py, composer.py (DAGs), notebooks.py, scheduled_queries.py
+│   ├── lineage/          # sqlglot parser + dependency graph + topological waves
+│   ├── convert/          # code.py = LLM-driven (DAGs/notebooks); runner.py + sql.py = legacy SQL
+│   ├── deploy/           # code.py = upload artifacts; runner.py = legacy data deploy
+│   ├── validate/         # profile + diff + LLM diagnose
+│   ├── docs/             # Azure DevOps wiki generator
+│   ├── llm/              # 4 providers (anthropic/openai/gemini/bedrock) with dispatcher
+│   └── state/            # audit log + approval state machine + rollback
+├── cli.py                # typer entrypoint (CI / power users)
+└── web/                  # FastAPI + HTMX + Tailwind + Alpine + Monaco (local UI)
 ```
 
-All commands work both in CLI and web — both are thin layers over `core/`.
+CLI and Web are thin layers over `core/` — neither holds business logic.
 
-## Credentials
+## License
 
-Credentials live in `.env` (gitignored). The Connections page reads/writes this file. Never put credentials in `.migrate/config.yaml` (which IS git-tracked).
-
-| Service | Auth method |
-|---|---|
-| GCP | Application Default Credentials (`gcloud auth application-default login`) **or** Service Account JSON |
-| Databricks | Personal Access Token + workspace URL |
-| Anthropic | API key (only if you want LLM fallback for conversion) |
-| AWS | Not needed — handled by Unity Catalog External Locations |
+MIT.

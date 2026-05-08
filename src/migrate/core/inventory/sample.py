@@ -176,6 +176,33 @@ LEFT JOIN `prj-data-prod.silver.orders_enriched` oe
                       ("attributed_revenue", "NUMERIC")),
     ))
 
+    # ---- Medallion chain: cartoes (raw → bronze → silver → gold) ----
+    # 4 BQ tables, each produced by a notebook of the same name
+    for layer, size_gb, rows_count, hot in [
+        ("raw",     12,    180_000_000, 410),
+        ("bronze",  6.5,    98_000_000, 540),
+        ("silver",  3.2,    52_000_000, 880),
+        ("gold",    0.8,    14_500_000, 1620),
+    ]:
+        rows.append(TableMetadata(
+            project="prj-data-prod", dataset=layer, name="cartoes",
+            type="TABLE",
+            size_bytes=int(size_gb * 1024**3),
+            row_count=rows_count,
+            partitioning="event_date" if layer in ("raw", "bronze") else None,
+            query_count_30d=hot,
+            source_kind="notebook",
+            source_notebook_id=f"{layer}.cartoes",
+            columns=_cols(
+                ("card_id", "STRING"), ("customer_id", "STRING"), ("amount", "NUMERIC"),
+                ("currency", "STRING"), ("event_ts", "TIMESTAMP"),
+                ("event_date", "DATE"),
+                *([("merchant_segment", "STRING"), ("risk_score", "FLOAT64")]
+                  if layer in ("silver", "gold") else []),
+            ),
+            description=f"{layer.upper()}-layer cartoes (cards). Produced by {layer}.cartoes.py.",
+        ))
+
     rows.append(TableMetadata(
         project="prj-data-prod", dataset="raw", name="legacy_etl_log",
         type="TABLE", size_bytes=3 * 1024**3, row_count=18_000_000, query_count_30d=4,
@@ -325,6 +352,49 @@ with DAG(
     )
 '''
 
+_CARTOES_PIPELINE_SRC = '''"""cartoes_pipeline — orchestrates the medallion chain for `cartoes`.
+
+Runs nightly. Each task executes the corresponding notebook on Vertex AI Workbench
+in sequence: raw → bronze → silver → gold. If any layer fails the chain is aborted
+(downstream notebooks would read stale/missing data).
+"""
+from datetime import datetime
+from airflow import DAG
+from airflow.providers.google.cloud.operators.vertex_ai.notebook import (
+    VertexAINotebookExecuteOperator,
+)
+
+default_args = {"owner": "cards-data@company.com", "retries": 1}
+
+with DAG(
+    "cartoes_pipeline",
+    default_args=default_args,
+    schedule_interval="0 4 * * *",
+    start_date=datetime(2024, 1, 1),
+    catchup=False,
+    tags=["cartoes", "medallion", "daily"],
+) as dag:
+
+    run_raw = VertexAINotebookExecuteOperator(
+        task_id="run_raw",
+        notebook_uri="gs://acme-data-notebooks/raw/cartoes.py",
+    )
+    run_bronze = VertexAINotebookExecuteOperator(
+        task_id="run_bronze",
+        notebook_uri="gs://acme-data-notebooks/bronze/cartoes.py",
+    )
+    run_silver = VertexAINotebookExecuteOperator(
+        task_id="run_silver",
+        notebook_uri="gs://acme-data-notebooks/silver/cartoes.py",
+    )
+    run_gold = VertexAINotebookExecuteOperator(
+        task_id="run_gold",
+        notebook_uri="gs://acme-data-notebooks/gold/cartoes.py",
+    )
+
+    run_raw >> run_bronze >> run_silver >> run_gold
+'''
+
 _MARKETING_ATTRIBUTION_SRC = '''"""Daily marketing attribution.
 
 Runs the multi-touch attribution notebook on Vertex AI Workbench, then
@@ -386,6 +456,35 @@ with DAG(
 def _build_dags() -> list[DAGMetadata]:
     return [
         DAGMetadata(
+            name="cartoes_pipeline",
+            file_path="gs://prj-composer-bucket/dags/cartoes_pipeline.py",
+            schedule="0 4 * * *", owner="cards-data@company.com",
+            tags=["cartoes", "medallion", "daily"],
+            description="Orchestrates raw→bronze→silver→gold notebooks for the cartoes pipeline.",
+            source_code=_CARTOES_PIPELINE_SRC,
+            tasks=[
+                DAGTask(task_id="run_raw",
+                        operator="VertexAINotebookExecuteOperator",
+                        notebook_uri="gs://acme-data-notebooks/raw/cartoes.py",
+                        destination_table="prj-data-prod.raw.cartoes"),
+                DAGTask(task_id="run_bronze",
+                        operator="VertexAINotebookExecuteOperator",
+                        notebook_uri="gs://acme-data-notebooks/bronze/cartoes.py",
+                        referenced_tables=["prj-data-prod.raw.cartoes"],
+                        destination_table="prj-data-prod.bronze.cartoes"),
+                DAGTask(task_id="run_silver",
+                        operator="VertexAINotebookExecuteOperator",
+                        notebook_uri="gs://acme-data-notebooks/silver/cartoes.py",
+                        referenced_tables=["prj-data-prod.bronze.cartoes"],
+                        destination_table="prj-data-prod.silver.cartoes"),
+                DAGTask(task_id="run_gold",
+                        operator="VertexAINotebookExecuteOperator",
+                        notebook_uri="gs://acme-data-notebooks/gold/cartoes.py",
+                        referenced_tables=["prj-data-prod.silver.cartoes"],
+                        destination_table="prj-data-prod.gold.cartoes"),
+            ],
+        ),
+        DAGMetadata(
             name="finance_daily_aggregations",
             file_path="gs://prj-composer-bucket/dags/finance_daily_aggregations.py",
             schedule="0 3 * * *", owner="finance-data@company.com",
@@ -445,7 +544,121 @@ def _build_dags() -> list[DAGMetadata]:
     ]
 
 
+_CARTOES_RAW_CODE = '''"""raw.cartoes — pulls latest card transactions from Cloud SQL into BQ raw layer.
+
+Owned by: cards-data@company.com
+Schedule: 0 4 * * * (via cartoes_pipeline DAG)
+"""
+from google.cloud import bigquery
+import pandas as pd
+import sqlalchemy
+
+PROJECT = "prj-data-prod"
+DEST = f"{PROJECT}.raw.cartoes"
+
+engine = sqlalchemy.create_engine("postgresql+pg8000://cards-cloudsql:5432/cards")
+df = pd.read_sql("""
+  SELECT card_id, customer_id, amount::numeric AS amount,
+         currency, event_ts, event_ts::date AS event_date
+  FROM card_transactions
+  WHERE event_ts >= NOW() - INTERVAL '1 day'
+""", engine)
+
+import pandas_gbq
+pandas_gbq.to_gbq(df, DEST, project_id=PROJECT, if_exists="append")
+'''
+
+_CARTOES_BRONZE_CODE = '''"""bronze.cartoes — cleans and conforms raw transactions, dedupe + null filtering."""
+from google.cloud import bigquery
+import pandas_gbq
+
+SQL = """
+SELECT
+  card_id, customer_id,
+  CAST(amount AS NUMERIC) AS amount,
+  UPPER(currency) AS currency,
+  event_ts, event_date
+FROM `prj-data-prod.raw.cartoes`
+WHERE card_id IS NOT NULL
+  AND amount IS NOT NULL
+  AND event_ts > '2020-01-01'
+QUALIFY ROW_NUMBER() OVER (PARTITION BY card_id, event_ts ORDER BY event_ts DESC) = 1
+"""
+
+df = pandas_gbq.read_gbq(SQL, project_id="prj-data-prod")
+pandas_gbq.to_gbq(df, "prj-data-prod.bronze.cartoes", project_id="prj-data-prod", if_exists="replace")
+'''
+
+_CARTOES_SILVER_CODE = '''"""silver.cartoes — enriches bronze with merchant segments + simple fraud risk."""
+import pandas_gbq
+
+SQL = """
+SELECT
+  b.card_id, b.customer_id, b.amount, b.currency, b.event_ts, b.event_date,
+  m.segment AS merchant_segment,
+  CASE WHEN b.amount > 5000 OR m.risk_flag THEN 0.85 ELSE 0.10 END AS risk_score
+FROM `prj-data-prod.bronze.cartoes` b
+LEFT JOIN `prj-data-prod.raw.merchants` m
+  ON SUBSTR(b.card_id, 1, 4) = m.bin_code
+"""
+
+df = pandas_gbq.read_gbq(SQL, project_id="prj-data-prod")
+pandas_gbq.to_gbq(df, "prj-data-prod.silver.cartoes", project_id="prj-data-prod", if_exists="replace")
+'''
+
+_CARTOES_GOLD_CODE = '''"""gold.cartoes — daily customer-level KPIs on top of silver."""
+import pandas_gbq
+
+SQL = """
+SELECT
+  customer_id,
+  event_date,
+  COUNT(*) AS txn_count,
+  SUM(amount) AS total_amount,
+  AVG(risk_score) AS avg_risk_score,
+  COUNT(DISTINCT merchant_segment) AS unique_segments
+FROM `prj-data-prod.silver.cartoes`
+GROUP BY customer_id, event_date
+"""
+
+df = pandas_gbq.read_gbq(SQL, project_id="prj-data-prod")
+pandas_gbq.to_gbq(df, "prj-data-prod.gold.cartoes", project_id="prj-data-prod", if_exists="replace")
+'''
+
+
 def _build_notebooks() -> list[NotebookMetadata]:
+    # ---- Cartoes medallion chain ----
+    cartoes_chain = []
+    for layer, code in [
+        ("raw",    _CARTOES_RAW_CODE),
+        ("bronze", _CARTOES_BRONZE_CODE),
+        ("silver", _CARTOES_SILVER_CODE),
+        ("gold",   _CARTOES_GOLD_CODE),
+    ]:
+        if layer == "raw":
+            reads = []
+            writes = ["prj-data-prod.raw.cartoes"]
+        else:
+            prev = {"bronze": "raw", "silver": "bronze", "gold": "silver"}[layer]
+            reads = [f"prj-data-prod.{prev}.cartoes"]
+            writes = [f"prj-data-prod.{layer}.cartoes"]
+        cartoes_chain.append(NotebookMetadata(
+            name=f"{layer}.cartoes",
+            location=f"gs://acme-data-notebooks/{layer}/cartoes.py",
+            kind="vertex_workbench",
+            description=f"{layer.upper()}-layer cartoes notebook. Reads {', '.join(reads) or '(external)'}; writes {writes[0]}.",
+            libraries=["google.cloud.bigquery", "pandas_gbq"] + (["sqlalchemy"] if layer == "raw" else []),
+            cells=[
+                NotebookCell(cell_type="markdown", source=f"# {layer.upper()}-layer cartoes\n\nProduces `{writes[0]}`."),
+                NotebookCell(
+                    cell_type="code", source=code, has_sql=True,
+                    sql_extracted=code,  # code IS SQL-flavored
+                    referenced_tables=reads,
+                    writes_tables=writes,
+                ),
+            ],
+        ))
+
     code1 = (
         "from google.cloud import bigquery\n"
         "import pandas as pd\n"
@@ -459,7 +672,7 @@ def _build_notebooks() -> list[NotebookMetadata]:
         "import pandas_gbq\n"
         "pandas_gbq.to_gbq(df, 'prj-marketing-prod.silver.campaign_performance')\n"
     )
-    return [
+    return cartoes_chain + [
         NotebookMetadata(
             name="marketing_attribution_v3",
             location="gs://prj-mkt-notebooks/attribution/marketing_attribution_v3.ipynb",
