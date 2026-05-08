@@ -15,10 +15,33 @@
     <p class="text-slate-500 mt-2 text-sm">Click <span class="text-accent-500">Scan now</span> for real GCP data, or <span class="text-accent-500">Sample</span> to explore the medallion-chain demo.</p>
   </div>
 {% elif kind == "notebook" %}
+  <!-- Manual upload (works without GCP access) -->
+  <div class="bg-ink-900 border border-ink-700 rounded-lg p-3 mb-3">
+    <form hx-post="/inventory/upload" hx-encoding="multipart/form-data"
+          hx-target="#upload-result-notebook" hx-swap="innerHTML"
+          class="flex items-center gap-2 text-xs">
+      <i data-lucide="upload" class="w-4 h-4 text-slate-500 flex-shrink-0"></i>
+      <span class="text-slate-400 mr-1">Upload notebooks manually</span>
+      <input type="hidden" name="kind" value="notebook" />
+      <input type="file" name="files" multiple accept=".py,.ipynb"
+             class="text-xs text-slate-300 file:mr-2 file:px-3 file:py-1 file:bg-ink-800 file:border file:border-ink-700 file:rounded file:text-slate-300 file:cursor-pointer hover:file:bg-ink-700" />
+      <button type="submit"
+              class="px-3 py-1 text-xs rounded bg-accent-600 hover:bg-accent-700 text-ink-950 font-medium">
+        Upload &amp; parse
+      </button>
+      <span class="text-slate-500 ml-2 text-[11px]">Accepts <code>.py</code> + <code>.ipynb</code> · same name replaces</span>
+    </form>
+    <div id="upload-result-notebook" class="mt-2"></div>
+  </div>
+
   {% if not inv.notebooks %}
     <div class="bg-ink-900 border border-ink-700 rounded-lg p-8 text-center text-sm text-slate-400">
-      No notebooks scanned. Set <code>GCP_NOTEBOOKS_BUCKET=gs://...</code> in <code>.env</code> and rescan,
-      or load <a href="#" hx-post="/inventory/scan" hx-vals='{"source": "sample"}' hx-target="#inventory-table" class="text-accent-500 hover:underline">sample data</a>.
+      No notebooks scanned <em>or uploaded</em>. Either:
+      <ul class="mt-2 inline-block text-left text-xs space-y-0.5">
+        <li>· Use the <strong>upload form above</strong> with files you downloaded from GCS / Vertex Workbench, or</li>
+        <li>· Set <code>GCP_NOTEBOOKS_BUCKET=gs://...</code> in <code>.env</code> and rescan, or</li>
+        <li>· Load <a href="#" hx-post="/inventory/scan" hx-vals='{"source": "sample"}' hx-target="#inventory-table" class="text-accent-500 hover:underline">sample data</a> to explore.</li>
+      </ul>
     </div>
   {% else %}
   {% set _layer_color = {'raw': 'slate', 'bronze': 'amber', 'silver': 'cyan', 'gold': 'yellow'} %}
@@ -107,9 +130,29 @@
   {% endif %}
 
 {% elif kind == "dag" %}
+  <!-- Manual upload (works without GCP access) -->
+  <div class="bg-ink-900 border border-ink-700 rounded-lg p-3 mb-3">
+    <form hx-post="/inventory/upload" hx-encoding="multipart/form-data"
+          hx-target="#upload-result-dag" hx-swap="innerHTML"
+          class="flex items-center gap-2 text-xs">
+      <i data-lucide="upload" class="w-4 h-4 text-slate-500 flex-shrink-0"></i>
+      <span class="text-slate-400 mr-1">Upload Airflow DAGs manually</span>
+      <input type="hidden" name="kind" value="dag" />
+      <input type="file" name="files" multiple accept=".py"
+             class="text-xs text-slate-300 file:mr-2 file:px-3 file:py-1 file:bg-ink-800 file:border file:border-ink-700 file:rounded file:text-slate-300 file:cursor-pointer hover:file:bg-ink-700" />
+      <button type="submit"
+              class="px-3 py-1 text-xs rounded bg-accent-600 hover:bg-accent-700 text-ink-950 font-medium">
+        Upload &amp; parse
+      </button>
+      <span class="text-slate-500 ml-2 text-[11px]">Accepts <code>.py</code> · DAG() detected via AST · same name replaces</span>
+    </form>
+    <div id="upload-result-dag" class="mt-2"></div>
+  </div>
+
   {% if not inv.dags %}
     <div class="bg-ink-900 border border-ink-700 rounded-lg p-8 text-center text-sm text-slate-400">
-      No DAGs scanned. Set <code>GCP_COMPOSER_DAG_BUCKET=gs://...</code> in <code>.env</code> and rescan.
+      No DAGs scanned <em>or uploaded</em>. Either upload <code>.py</code> files from your Composer bucket above,
+      or set <code>GCP_COMPOSER_DAG_BUCKET=gs://...</code> in <code>.env</code> and rescan.
     </div>
   {% else %}
   <div class="bg-ink-900 border border-ink-700 rounded-lg overflow-hidden">

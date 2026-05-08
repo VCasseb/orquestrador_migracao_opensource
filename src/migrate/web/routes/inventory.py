@@ -1,11 +1,16 @@
 from __future__ import annotations
 
-from fastapi import FastAPI, Form, Request
+from datetime import datetime, timezone
+from pathlib import Path
+
+from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from migrate.core.inventory.catalog import load_inventory, save_inventory
+from migrate.core.inventory.composer import parse_dag_file
 from migrate.core.inventory.models import Inventory
+from migrate.core.inventory.notebooks import parse_notebook_file
 from migrate.core.inventory.scanner import run_scan
 from migrate.core.state.selection import load_selection, toggle
 
@@ -161,6 +166,82 @@ def attach(app: FastAPI, templates: Jinja2Templates) -> None:
             request,
             "_select_button.html",
             {"fqn": fqn, "chosen": chosen},
+        )
+
+    @app.post("/inventory/upload")
+    async def inventory_upload(
+        request: Request,
+        kind: str = Form(...),
+        files: list[UploadFile] = File(...),
+    ):
+        """Manual upload — parses uploaded files as if they came from a real scan
+        and merges into inventory.yaml. Idempotent: same name replaces existing entry."""
+        if kind not in ("notebook", "dag"):
+            return HTMLResponse(f"<div class='text-rose-400 p-3'>Unsupported kind: {kind}</div>", status_code=400)
+
+        inv = load_inventory() or Inventory(
+            scanned_at=datetime.now(timezone.utc), projects=[], tables=[],
+        )
+
+        target_dir = Path(".migrate/uploads") / ("notebooks" if kind == "notebook" else "dags")
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        added: list[str] = []
+        replaced: list[str] = []
+        errors: list[str] = []
+
+        for f in files:
+            if not f.filename:
+                continue
+            try:
+                raw = await f.read()
+                content = raw.decode("utf-8", errors="replace")
+            except Exception as e:
+                errors.append(f"{f.filename}: read failed — {e}")
+                continue
+
+            local_path = target_dir / f.filename
+            try:
+                local_path.write_text(content)
+            except Exception as e:
+                errors.append(f"{f.filename}: write failed — {e}")
+                continue
+
+            try:
+                if kind == "notebook":
+                    if not f.filename.lower().endswith((".py", ".ipynb")):
+                        errors.append(f"{f.filename}: only .py and .ipynb supported")
+                        continue
+                    nb = parse_notebook_file(f.filename, content, location=str(local_path))
+                    existing = next((i for i, x in enumerate(inv.notebooks) if x.name == nb.name), None)
+                    if existing is not None:
+                        inv.notebooks[existing] = nb
+                        replaced.append(nb.name)
+                    else:
+                        inv.notebooks.append(nb)
+                        added.append(nb.name)
+                else:  # dag
+                    if not f.filename.lower().endswith(".py"):
+                        errors.append(f"{f.filename}: DAG must be .py")
+                        continue
+                    dag = parse_dag_file(str(local_path), content)
+                    if not dag:
+                        errors.append(f"{f.filename}: no DAG() found in source")
+                        continue
+                    existing = next((i for i, x in enumerate(inv.dags) if x.name == dag.name), None)
+                    if existing is not None:
+                        inv.dags[existing] = dag
+                        replaced.append(dag.name)
+                    else:
+                        inv.dags.append(dag)
+                        added.append(dag.name)
+            except Exception as e:
+                errors.append(f"{f.filename}: parse failed — {e}")
+
+        save_inventory(inv)
+        return templates.TemplateResponse(
+            request, "_upload_result.html",
+            {"kind": kind, "added": added, "replaced": replaced, "errors": errors},
         )
 
     @app.get("/inventory/detail/{fqn}")

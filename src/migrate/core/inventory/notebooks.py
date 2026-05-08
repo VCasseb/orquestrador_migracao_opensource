@@ -37,6 +37,60 @@ def _detect_libs(source: str) -> list[str]:
     return sorted(out)
 
 
+def parse_notebook_py(content: str, name: str, location: str) -> NotebookMetadata:
+    """Parse a Python-format notebook (.py).
+
+    Handles the Databricks notebook source format that uses `# COMMAND ----------`
+    as cell separators and `# MAGIC %md` for markdown cells. Falls back to a single
+    code cell if no separators are found.
+    """
+    libraries = set(_detect_libs(content))
+
+    # Split by Databricks COMMAND markers if present
+    raw_cells: list[str] = []
+    if "# COMMAND ----------" in content:
+        raw_cells = [c.strip() for c in content.split("# COMMAND ----------") if c.strip()]
+    else:
+        raw_cells = [content]
+
+    cells: list[NotebookCell] = []
+    for chunk in raw_cells:
+        # detect markdown cell (Databricks: lines start with `# MAGIC %md` or `# MAGIC #...`)
+        is_md = chunk.lstrip().startswith("# MAGIC %md") or chunk.lstrip().startswith("# MAGIC ")
+        if is_md:
+            cells.append(NotebookCell(cell_type="markdown", source=chunk))
+            continue
+        c = NotebookCell(cell_type="code", source=chunk)
+        sqls = _SQL_INSIDE_QUERY_RE.findall(chunk) + _PANDAS_GBQ_READ_RE.findall(chunk)
+        if sqls:
+            c.has_sql = True
+            c.sql_extracted = "\n".join(s.strip() for s in sqls)
+            refs: set[str] = set()
+            for sql in sqls:
+                refs.update(extract_refs(sql))
+            c.referenced_tables = sorted(refs)
+        writes = _PANDAS_GBQ_WRITE_RE.findall(chunk)
+        if writes:
+            c.writes_tables = sorted(set(writes))
+        cells.append(c)
+
+    return NotebookMetadata(
+        name=name,
+        location=location,
+        kind="gcs_ipynb",
+        cells=cells,
+        libraries=sorted(libraries),
+    )
+
+
+def parse_notebook_file(filename: str, content: str, location: str) -> NotebookMetadata:
+    """Dispatcher: parse .ipynb or .py based on filename suffix."""
+    base = filename.rsplit(".", 1)[0]
+    if filename.lower().endswith(".ipynb"):
+        return parse_notebook_json(content, name=base, location=location)
+    return parse_notebook_py(content, name=base, location=location)
+
+
 def parse_notebook_json(content: str, name: str, location: str) -> NotebookMetadata:
     data = json.loads(content)
     cells_raw = data.get("cells", [])

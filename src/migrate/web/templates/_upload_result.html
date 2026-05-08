@@ -1,0 +1,29 @@
+<div class="px-3 py-2 rounded-lg text-sm space-y-1
+            {% if errors %}bg-rose-950/30 border border-rose-800/40{% else %}bg-emerald-950/30 border border-emerald-800/40{% endif %}">
+  {% if added %}
+    <div class="text-emerald-300">
+      ✓ Added <strong>{{ added|length }}</strong> {{ kind }}(s):
+      <code class="text-emerald-200">{{ added|join(", ") }}</code>
+    </div>
+  {% endif %}
+  {% if replaced %}
+    <div class="text-cyan-300">
+      ↻ Replaced <strong>{{ replaced|length }}</strong> existing {{ kind }}(s):
+      <code class="text-cyan-200">{{ replaced|join(", ") }}</code>
+    </div>
+  {% endif %}
+  {% if errors %}
+    <div class="text-rose-300">
+      ✗ Errors:
+      <ul class="ml-3 mt-0.5 text-xs">
+        {% for e in errors %}<li>· {{ e }}</li>{% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+  {% if added or replaced %}
+    <div class="text-xs text-slate-500 mt-1">
+      Saved to <code>.migrate/uploads/{{ "notebooks" if kind == "notebook" else "dags" }}/</code> and merged into inventory.
+      <a href="/inventory?kind={{ kind }}" class="text-accent-500 hover:underline">Refresh inventory →</a>
+    </div>
+  {% endif %}
+</div>
