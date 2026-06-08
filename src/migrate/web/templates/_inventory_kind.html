@@ -1,6 +1,6 @@
 {% if cache_cleared %}
   <div class="mb-4 p-3 rounded bg-emerald-950/30 border border-emerald-800/40 text-emerald-300 text-sm">
-    ✓ Local cache cleared. Click <strong>Scan now</strong> to refetch.
+    ✓ Cache local limpo.
   </div>
 {% endif %}
 
@@ -8,269 +8,64 @@
   <div class="mb-4 p-3 rounded bg-rose-950/40 border border-rose-800/40 text-rose-300 text-sm">{{ error }}</div>
 {% endif %}
 
-{% if not inv %}
-  <div class="bg-ink-900 border border-ink-700 rounded-lg p-12 text-center">
+{% if warnings %}
+  <div class="mb-4 p-3 rounded bg-amber-950/30 border border-amber-800/40 text-amber-300 text-sm">
+    <div class="font-medium mb-1">⚠ Scan concluído com avisos:</div>
+    <ul class="text-xs space-y-0.5 ml-3">
+      {% for w in warnings %}<li>· {{ w }}</li>{% endfor %}
+    </ul>
+  </div>
+{% endif %}
+
+<!-- Uploader (sempre disponível, funciona offline) -->
+<div class="bg-ink-900 border border-ink-700 rounded-lg p-3 mb-4">
+  {% with result_id = 'upload-result', reload_to = '/inventory' %}
+    {% include "_upload_form.html" %}
+  {% endwith %}
+</div>
+
+{% set notebooks = inv.notebooks if inv else [] %}
+{% set dags = inv.dags if inv else [] %}
+{% set _layer_color = {'raw': 'slate', 'bronze': 'amber', 'silver': 'cyan', 'gold': 'yellow'} %}
+
+{% if not notebooks and not dags %}
+  <div class="bg-ink-900 border border-ink-700 rounded-lg p-10 text-center">
     <div class="text-3xl mb-3 opacity-40"><i data-lucide="folder-search" class="inline w-8 h-8"></i></div>
-    <h2 class="text-lg font-semibold text-slate-200">No inventory yet</h2>
-    <p class="text-slate-500 mt-2 text-sm">Click <span class="text-accent-500">Scan now</span> for real GCP data, or <span class="text-accent-500">Sample</span> to explore the medallion-chain demo.</p>
+    <h2 class="text-lg font-semibold text-slate-200">Nenhum código ainda</h2>
+    <p class="text-slate-500 mt-2 text-sm">
+      Escolha arquivos no campo acima — eles sobem automaticamente
+      {% if source_connected() %} ou clique <span class="text-accent-500">Scan now</span> para puxar da GCP{% endif %}.
+    </p>
   </div>
-{% elif kind == "notebook" %}
-  <!-- Manual upload (works without GCP access) -->
-  <div class="bg-ink-900 border border-ink-700 rounded-lg p-3 mb-3">
-    <form hx-post="/inventory/upload" hx-encoding="multipart/form-data"
-          hx-target="#upload-result-notebook" hx-swap="innerHTML"
-          class="flex items-center gap-2 text-xs">
-      <i data-lucide="upload" class="w-4 h-4 text-slate-500 flex-shrink-0"></i>
-      <span class="text-slate-400 mr-1">Upload notebooks manually</span>
-      <input type="hidden" name="kind" value="notebook" />
-      <input type="file" name="files" multiple accept=".py,.ipynb,.zip"
-             class="text-xs text-slate-300 file:mr-2 file:px-3 file:py-1 file:bg-ink-800 file:border file:border-ink-700 file:rounded file:text-slate-300 file:cursor-pointer hover:file:bg-ink-700" />
-      <button type="submit"
-              class="px-3 py-1 text-xs rounded bg-accent-600 hover:bg-accent-700 text-ink-950 font-medium">
-        Upload &amp; parse
-      </button>
-      <span class="text-slate-500 ml-2 text-[11px]">Accepts <code>.py</code> · <code>.ipynb</code> · <code>.zip</code> (auto-extracted) · same name replaces</span>
-    </form>
-    <div id="upload-result-notebook" class="mt-2"></div>
-  </div>
-
-  {% if not inv.notebooks %}
-    <div class="bg-ink-900 border border-ink-700 rounded-lg p-8 text-center text-sm text-slate-400">
-      No notebooks scanned <em>or uploaded</em>. Either:
-      <ul class="mt-2 inline-block text-left text-xs space-y-0.5">
-        <li>· Use the <strong>upload form above</strong> with files you downloaded from GCS / Vertex Workbench, or</li>
-        <li>· Set <code>GCP_NOTEBOOKS_BUCKET=gs://...</code> in <code>.env</code> and rescan, or</li>
-        <li>· Load <a href="#" hx-post="/inventory/scan" hx-vals='{"source": "sample"}' hx-target="#inventory-table" class="text-accent-500 hover:underline">sample data</a> to explore.</li>
-      </ul>
-    </div>
-  {% else %}
-  {% set _layer_color = {'raw': 'slate', 'bronze': 'amber', 'silver': 'cyan', 'gold': 'yellow'} %}
-  {% set _layer_active = layer or "" %}
-  {% set _layers_present = (inv.notebooks | map(attribute="layer") | reject("none") | list) | unique | sort %}
-  {% set _filtered = inv.notebooks if not _layer_active else (inv.notebooks | selectattr("layer", "equalto", _layer_active) | list) %}
-
-  <div class="mb-3 flex items-center gap-2 text-xs">
-    <span class="text-slate-500 uppercase tracking-wider mr-1">Layer:</span>
-    <a href="/inventory?kind=notebook"
-       class="px-2.5 py-1 rounded border transition-colors
-              {% if not _layer_active %}border-accent-500 text-accent-500{% else %}border-ink-700 text-slate-400 hover:text-slate-200{% endif %}">All</a>
-    {% for ly in _layers_present %}
-      {% set lyc = _layer_color.get(ly, 'slate') %}
-      <a href="/inventory?kind=notebook&layer={{ ly }}"
-         class="px-2.5 py-1 rounded border transition-colors
-                {% if _layer_active == ly %}bg-{{ lyc }}-950/40 border-{{ lyc }}-700/40 text-{{ lyc }}-300{% else %}border-ink-700 text-slate-400 hover:text-{{ lyc }}-300 hover:border-{{ lyc }}-700/40{% endif %}">
-        {{ ly }}
-      </a>
-    {% endfor %}
-    <span class="ml-auto text-slate-500">Showing {{ _filtered|length }} of {{ inv.notebooks|length }}</span>
-  </div>
-
-  <div class="bg-ink-900 border border-ink-700 rounded-lg overflow-hidden">
-    <div class="px-4 py-2 border-b border-ink-700 text-xs text-slate-500">
-      {{ inv.notebooks|length }} notebooks — primary migration target
-    </div>
-    <table class="w-full text-sm">
-      <thead class="bg-ink-800 text-xs uppercase tracking-wider text-slate-400">
-        <tr>
-          <th class="text-left px-4 py-2.5 font-medium">Notebook</th>
-          <th class="text-left px-3 py-2.5 font-medium">Layer</th>
-          <th class="text-left px-3 py-2.5 font-medium">Reads</th>
-          <th class="text-left px-3 py-2.5 font-medium">Writes</th>
-          <th class="text-left px-3 py-2.5 font-medium">Libraries</th>
-          <th class="text-right px-3 py-2.5 font-medium">Plan</th>
-        </tr>
-      </thead>
-      <tbody class="divide-y divide-ink-800">
-        {% for nb in _filtered %}
-        {% set ly = nb.layer or 'other' %}
-        {% set lyc = _layer_color.get(ly, 'slate') %}
-        {% set sel_item = "notebook:" ~ nb.name %}
-        {% set is_sel = sel_item in selected %}
-        <tr class="hover:bg-ink-800/50">
-          <td class="px-4 py-2">
-            <div class="font-mono text-xs text-slate-200">{{ nb.name }}</div>
-            <div class="text-xs text-slate-500 mt-0.5 truncate max-w-md">{{ nb.location }}</div>
-          </td>
-          <td class="px-3 py-2">
-            <span class="text-xs px-1.5 py-0.5 rounded bg-{{ lyc }}-950/40 text-{{ lyc }}-300 font-mono uppercase">{{ ly }}</span>
-          </td>
-          <td class="px-3 py-2 text-xs text-slate-400">
-            {% if nb.all_referenced_tables %}
-              {% for t in nb.all_referenced_tables[:2] %}<div class="font-mono text-slate-400 truncate max-w-xs">{{ t }}</div>{% endfor %}
-              {% if nb.all_referenced_tables|length > 2 %}<div class="text-slate-600">+{{ nb.all_referenced_tables|length - 2 }} more</div>{% endif %}
-            {% else %}<span class="text-slate-600">—</span>{% endif %}
-          </td>
-          <td class="px-3 py-2 text-xs">
-            {% if nb.all_written_tables %}
-              {% for t in nb.all_written_tables[:2] %}<div class="font-mono text-cyan-400 truncate max-w-xs">{{ t }}</div>{% endfor %}
-              {% if nb.all_written_tables|length > 2 %}<div class="text-slate-600">+{{ nb.all_written_tables|length - 2 }} more</div>{% endif %}
-            {% else %}<span class="text-slate-600">—</span>{% endif %}
-          </td>
-          <td class="px-3 py-2 text-xs">
-            {% for lib in nb.libraries[:3] %}
-              <span class="px-1.5 py-0.5 rounded bg-amber-950/30 text-amber-400 text-[11px] font-mono mr-1">{{ lib.split('.')[-1] }}</span>
-            {% endfor %}
-          </td>
-          <td class="px-3 py-2 text-right">
-            <div class="flex items-center justify-end gap-1.5">
-              {% with item = sel_item, chosen = is_sel %}
-                {% include "_select_item_button.html" %}
-              {% endwith %}
-              <a href="/convert?kind=notebook&name={{ nb.name }}"
-                 class="px-2.5 py-1 text-xs rounded bg-accent-600 hover:bg-accent-700 text-ink-950 font-medium transition-colors inline-flex items-center gap-1">
-                <i data-lucide="sparkles" class="w-3 h-3"></i><span>Convert</span>
-              </a>
-            </div>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% endif %}
-
-{% elif kind == "dag" %}
-  <!-- Manual upload (works without GCP access) -->
-  <div class="bg-ink-900 border border-ink-700 rounded-lg p-3 mb-3">
-    <form hx-post="/inventory/upload" hx-encoding="multipart/form-data"
-          hx-target="#upload-result-dag" hx-swap="innerHTML"
-          class="flex items-center gap-2 text-xs">
-      <i data-lucide="upload" class="w-4 h-4 text-slate-500 flex-shrink-0"></i>
-      <span class="text-slate-400 mr-1">Upload Airflow DAGs manually</span>
-      <input type="hidden" name="kind" value="dag" />
-      <input type="file" name="files" multiple accept=".py,.zip"
-             class="text-xs text-slate-300 file:mr-2 file:px-3 file:py-1 file:bg-ink-800 file:border file:border-ink-700 file:rounded file:text-slate-300 file:cursor-pointer hover:file:bg-ink-700" />
-      <button type="submit"
-              class="px-3 py-1 text-xs rounded bg-accent-600 hover:bg-accent-700 text-ink-950 font-medium">
-        Upload &amp; parse
-      </button>
-      <span class="text-slate-500 ml-2 text-[11px]">Accepts <code>.py</code> · <code>.zip</code> (auto-extracted) · DAG() detected via AST · same name replaces</span>
-    </form>
-    <div id="upload-result-dag" class="mt-2"></div>
-  </div>
-
-  {% if not inv.dags %}
-    <div class="bg-ink-900 border border-ink-700 rounded-lg p-8 text-center text-sm text-slate-400">
-      No DAGs scanned <em>or uploaded</em>. Either upload <code>.py</code> files from your Composer bucket above,
-      or set <code>GCP_COMPOSER_DAG_BUCKET=gs://...</code> in <code>.env</code> and rescan.
-    </div>
-  {% else %}
-  <div class="bg-ink-900 border border-ink-700 rounded-lg overflow-hidden">
-    <div class="px-4 py-2 border-b border-ink-700 text-xs text-slate-500">
-      {{ inv.dags|length }} DAGs — orchestration migration target
-    </div>
-    <table class="w-full text-sm">
-      <thead class="bg-ink-800 text-xs uppercase tracking-wider text-slate-400">
-        <tr>
-          <th class="text-left px-4 py-2.5 font-medium">DAG</th>
-          <th class="text-left px-3 py-2.5 font-medium">Schedule</th>
-          <th class="text-center px-3 py-2.5 font-medium">Tasks</th>
-          <th class="text-left px-3 py-2.5 font-medium">Writes (sample)</th>
-          <th class="text-left px-3 py-2.5 font-medium">Tags</th>
-          <th class="text-right px-3 py-2.5 font-medium">Plan</th>
-        </tr>
-      </thead>
-      <tbody class="divide-y divide-ink-800">
-        {% for d in inv.dags %}
-        <tr class="hover:bg-ink-800/50">
-          <td class="px-4 py-2">
-            <div class="font-mono text-xs text-slate-200">{{ d.name }}</div>
-            <div class="text-xs text-slate-500 mt-0.5 truncate max-w-md">{{ d.file_path }}</div>
-          </td>
-          <td class="px-3 py-2 font-mono text-xs text-slate-400">{{ d.schedule or '—' }}</td>
-          <td class="px-3 py-2 text-center text-xs text-slate-300">{{ d.tasks|length }}</td>
-          <td class="px-3 py-2 text-xs">
-            {% for t in d.writes_tables[:2] %}<div class="font-mono text-cyan-400 truncate max-w-xs">{{ t }}</div>{% endfor %}
-            {% if d.writes_tables|length > 2 %}<div class="text-slate-600">+{{ d.writes_tables|length - 2 }} more</div>{% endif %}
-          </td>
-          <td class="px-3 py-2 text-xs">
-            {% for tag in d.tags[:3] %}<span class="px-1.5 py-0.5 rounded bg-emerald-950/30 text-emerald-400 text-[11px] mr-1">{{ tag }}</span>{% endfor %}
-          </td>
-          <td class="px-3 py-2 text-right">
-            {% set sel_item = "dag:" ~ d.name %}
-            {% set is_sel = sel_item in selected %}
-            <div class="flex items-center justify-end gap-1.5">
-              {% with item = sel_item, chosen = is_sel %}
-                {% include "_select_item_button.html" %}
-              {% endwith %}
-              <a href="/convert?kind=dag&name={{ d.name }}"
-                 class="px-2.5 py-1 text-xs rounded bg-accent-600 hover:bg-accent-700 text-ink-950 font-medium transition-colors inline-flex items-center gap-1">
-                <i data-lucide="sparkles" class="w-3 h-3"></i><span>Convert</span>
-              </a>
-            </div>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% endif %}
-
 {% else %}
-  {# Tables — informational only #}
-  <div class="mb-3 px-3 py-2 bg-slate-950/30 border border-slate-700/40 rounded-lg text-xs text-slate-400">
-    <i data-lucide="info" class="inline w-3.5 h-3.5 -mt-0.5"></i>
-    Tables are scanned for <strong class="text-slate-300">lineage context only</strong> — they show what notebooks read/write. Migration is for code (notebooks + DAGs); tables come along when their producing notebooks are run on the new platform.
-  </div>
-  {% set src_icon = {
-    'view': ('🔷', 'view'),
-    'scheduled_query': ('⏱', 'sched query'),
-    'dag_sql': ('🟩', 'DAG SQL'),
-    'dag_python': ('🐍', 'DAG Python'),
-    'dag_notebook': ('🟧', 'DAG → notebook'),
-    'notebook': ('📓', 'notebook'),
-    'external_gcs': ('☁', 'external GCS'),
-    'manual': ('🖐', 'manual'),
-    'unknown': ('—', 'unknown'),
-  } %}
   <div class="bg-ink-900 border border-ink-700 rounded-lg overflow-hidden">
-    <div class="px-4 py-2 border-b border-ink-700 text-xs text-slate-500">{{ inv.tables|length }} tables — informational</div>
+    <div class="px-4 py-2 border-b border-ink-700 text-xs text-slate-500">
+      {{ notebooks|length + dags|length }} código(s) — clique no nome para ver o código
+    </div>
     <table class="w-full text-sm">
       <thead class="bg-ink-800 text-xs uppercase tracking-wider text-slate-400">
         <tr>
-          <th class="text-left px-4 py-2.5 font-medium">Object</th>
-          <th class="text-left px-3 py-2.5 font-medium">Type</th>
-          <th class="text-left px-3 py-2.5 font-medium">Produced by</th>
-          <th class="text-right px-3 py-2.5 font-medium">Rows</th>
-          <th class="text-right px-3 py-2.5 font-medium">Size</th>
-          <th class="text-center px-3 py-2.5 font-medium">Heat</th>
+          <th class="text-left px-4 py-2.5 font-medium">Código / arquivo</th>
+          <th class="text-left px-3 py-2.5 font-medium">Tipo</th>
+          <th class="text-left px-3 py-2.5 font-medium">Camada / schedule</th>
+          <th class="text-left px-3 py-2.5 font-medium">Lê</th>
+          <th class="text-left px-3 py-2.5 font-medium">Escreve</th>
+          <th class="text-right px-3 py-2.5 font-medium">Plano</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-ink-800">
-        {% for t in inv.tables %}
-        <tr class="hover:bg-ink-800/40">
-          <td class="px-4 py-2">
-            <button class="text-left hover:text-accent-500"
-                    hx-get="/inventory/detail/{{ t.fqn }}" hx-target="#detail-modal" hx-swap="innerHTML">
-              <span class="text-slate-500">{{ t.project }}.{{ t.dataset }}.</span><span class="text-slate-100">{{ t.name }}</span>
-            </button>
-          </td>
-          <td class="px-3 py-2">
-            <span class="text-xs px-1.5 py-0.5 rounded
-              {% if t.type == 'TABLE' %}bg-cyan-950/40 text-cyan-300
-              {% elif t.type == 'VIEW' %}bg-purple-950/40 text-purple-300
-              {% elif t.type == 'MATERIALIZED_VIEW' %}bg-pink-950/40 text-pink-300
-              {% else %}bg-slate-800 text-slate-400{% endif %}">{{ t.type }}</span>
-          </td>
-          <td class="px-3 py-2 text-xs">
-            {% set icon, label = src_icon.get(t.source_kind, ('—', t.source_kind)) %}
-            {% if t.source_notebook_id %}
-              <a href="/convert?kind=notebook&name={{ t.source_notebook_id }}"
-                 class="text-amber-400 hover:underline font-mono">{{ icon }} {{ t.source_notebook_id }}</a>
-            {% elif t.source_dag_id %}
-              <a href="/convert?kind=dag&name={{ t.source_dag_id }}"
-                 class="text-emerald-400 hover:underline font-mono">{{ icon }} {{ t.source_dag_id }}</a>
-            {% else %}
-              <span class="text-slate-500">{{ icon }} {{ label }}</span>
-            {% endif %}
-          </td>
-          <td class="px-3 py-2 text-right text-slate-400 tabular-nums text-xs">{{ humanize_count(t.row_count) }}</td>
-          <td class="px-3 py-2 text-right text-slate-400 tabular-nums text-xs">{{ humanize_bytes(t.size_bytes) }}</td>
-          <td class="px-3 py-2 text-center text-xs
-              {% if t.heat == 'hot' %}text-orange-400
-              {% elif t.heat == 'warm' %}text-yellow-400
-              {% else %}text-slate-500{% endif %}">{{ t.heat }}</td>
-        </tr>
+        {# Each row is normalized into: ck (kind), cname, cloc, creads, cwrites, cdetail #}
+        {% for row in notebooks %}
+          {% set ck = 'notebook' %}{% set cname = row.name %}{% set cloc = row.location %}
+          {% set creads = row.all_referenced_tables %}{% set cwrites = row.all_written_tables %}
+          {% set cdetail = (row.layer or '') %}
+          {% include "_inventory_row.html" %}
+        {% endfor %}
+        {% for row in dags %}
+          {% set ck = 'dag' %}{% set cname = row.name %}{% set cloc = row.file_path %}
+          {% set creads = row.reads_tables %}{% set cwrites = row.writes_tables %}
+          {% set cdetail = (row.schedule or '') %}
+          {% include "_inventory_row.html" %}
         {% endfor %}
       </tbody>
     </table>

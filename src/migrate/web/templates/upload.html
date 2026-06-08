@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Upload · migrate{% endblock %}
+{% block content %}
+<div class="mb-6">
+  <h1 class="text-2xl font-semibold text-slate-100">Upload</h1>
+  <p class="text-slate-400 mt-1 text-sm">
+    Envie notebooks e DAGs manualmente — <strong class="text-slate-300">sem precisar conectar em nenhuma nuvem</strong>.
+    Cada arquivo enviado ganha um botão <span class="text-accent-500">Converter</span> que leva ao fluxo de conversão.
+    {% if not source_connected() %}<br>Para escanear direto da GCP, configure a origem em
+    <a href="/connections" class="text-accent-500 hover:underline">Connections</a>.{% endif %}
+  </p>
+</div>
+
+<div class="bg-ink-900 border border-ink-700 rounded-lg p-4 mb-6">
+  {% with result_id = 'upload-result' %}
+    {% include "_upload_form.html" %}
+  {% endwith %}
+</div>
+
+<!-- Lista de artefatos enviados — atualiza sozinha após cada upload -->
+<div id="uploaded-list"
+     hx-get="/upload/list"
+     hx-trigger="artifactsUploaded from:body"
+     hx-swap="innerHTML">
+  {% include "_upload_list.html" %}
+</div>
+
+<div id="detail-modal"></div>
+{% endblock %}

@@ -1,0 +1,25 @@
+<div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-6"
+     onclick="if (event.target === this) this.remove()">
+  <div class="bg-ink-900 border border-ink-700 rounded-lg max-w-4xl w-full max-h-[85vh] flex flex-col"
+       onclick="event.stopPropagation()">
+    <div class="px-6 py-4 border-b border-ink-700 flex items-start justify-between">
+      <div>
+        <div class="flex items-center gap-2">
+          <i data-lucide="{{ 'notebook' if kind == 'notebook' else 'git-merge' }}" class="w-4 h-4 {{ 'text-amber-400' if kind == 'notebook' else 'text-emerald-400' }}"></i>
+          <h2 class="text-lg font-semibold text-slate-100 font-mono">{{ title }}</h2>
+        </div>
+        {% if subtitle %}<div class="text-xs text-slate-500 mt-1 truncate max-w-xl">{{ subtitle }}</div>{% endif %}
+      </div>
+      <div class="flex items-center gap-3">
+        <a href="/convert?kind={{ kind }}&name={{ name }}"
+           class="px-3 py-1.5 text-xs rounded bg-accent-600 hover:bg-accent-700 text-ink-950 font-medium inline-flex items-center gap-1.5">
+          <i data-lucide="sparkles" class="w-3.5 h-3.5"></i><span>Converter</span>
+        </a>
+        <button onclick="this.closest('.fixed').remove()" class="text-slate-500 hover:text-slate-200 text-xl leading-none">×</button>
+      </div>
+    </div>
+    <div class="px-6 py-4 overflow-auto">
+      <pre class="bg-ink-800 border border-ink-700 rounded p-3 text-xs text-slate-300 overflow-x-auto whitespace-pre">{{ code }}</pre>
+    </div>
+  </div>
+</div>

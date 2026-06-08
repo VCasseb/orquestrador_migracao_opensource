@@ -18,7 +18,7 @@ DEFAULT_MODEL = "anthropic.claude-sonnet-4-20250514-v1:0"
 DEFAULT_REGION = "us-east-1"
 
 
-def complete(system: str, user: str, max_tokens: int = 4000) -> tuple[str, str]:
+def complete_with_usage(system: str, user: str, max_tokens: int = 4000) -> tuple[str, str, dict | None]:
     region = get_env("AWS_REGION", DEFAULT_REGION) or DEFAULT_REGION
     model = get_env("BEDROCK_MODEL_ID", DEFAULT_MODEL)
     import boto3
@@ -33,6 +33,15 @@ def complete(system: str, user: str, max_tokens: int = 4000) -> tuple[str, str]:
     payload = json.loads(resp["body"].read())
     parts = payload.get("content", [])
     text = "".join(p["text"] for p in parts if p.get("type") == "text").strip()
+    usage = None
+    u = payload.get("usage") or {}
+    if u:
+        usage = {"input_tokens": u.get("input_tokens", 0), "output_tokens": u.get("output_tokens", 0)}
+    return text, model, usage
+
+
+def complete(system: str, user: str, max_tokens: int = 4000) -> tuple[str, str]:
+    text, model, _ = complete_with_usage(system, user, max_tokens)
     return text, model
 
 

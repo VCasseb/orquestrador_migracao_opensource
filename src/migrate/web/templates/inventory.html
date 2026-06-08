@@ -5,19 +5,19 @@
   <div>
     <h1 class="text-2xl font-semibold text-slate-100">Inventory</h1>
     {% if inv %}
+      {% set _ncodes = (inv.notebooks|length) + (inv.dags|length) %}
       <p class="text-slate-400 mt-1 text-sm">
-        Migration targets:
-        <span class="text-amber-400 font-medium">{{ inv.notebooks|length }}</span> notebooks ·
-        <span class="text-emerald-400 font-medium">{{ inv.dags|length }}</span> DAGs ·
-        <span class="text-violet-400 font-medium">{{ inv.scheduled_queries|length }}</span> scheduled queries
+        <span class="text-slate-100 font-medium">{{ _ncodes }}</span> código(s) para migrar
         <span class="text-slate-600 mx-1">·</span>
-        <span class="text-slate-500">{{ inv.tables|length }} tables (context)</span>
-        — scanned {{ inv.scanned_at.strftime('%Y-%m-%d %H:%M UTC') }}
+        <span class="text-amber-400">{{ inv.notebooks|length }}</span> notebooks ·
+        <span class="text-emerald-400">{{ inv.dags|length }}</span> DAGs
+        {% if inv.tables %}<span class="text-slate-600 mx-1">·</span><span class="text-slate-500">{{ inv.tables|length }} tabelas (contexto)</span>{% endif %}
       </p>
     {% else %}
-      <p class="text-slate-400 mt-1 text-sm">No inventory yet. Run a scan to populate.</p>
+      <p class="text-slate-400 mt-1 text-sm">Sem inventário ainda. Envie arquivos ou rode um scan.</p>
     {% endif %}
   </div>
+  {% if source_connected() %}
   <div class="flex items-center gap-2">
     <form hx-post="/inventory/scan"
           hx-target="#inventory-table"
@@ -28,51 +28,15 @@
               class="px-4 py-2 text-sm rounded bg-accent-600 hover:bg-accent-700 text-ink-950 font-medium transition-colors flex items-center gap-1.5">
         <i data-lucide="refresh-cw" class="w-4 h-4"></i><span>Scan now</span>
       </button>
-      <button name="source" value="sample" type="submit"
-              class="px-4 py-2 text-sm rounded bg-ink-800 border border-ink-700 hover:bg-ink-700 transition-colors flex items-center gap-1.5">
-        <i data-lucide="flask-conical" class="w-4 h-4"></i><span>Sample</span>
-      </button>
     </form>
-    <button hx-post="/inventory/clear-cache"
-            hx-target="#inventory-table"
-            hx-swap="innerHTML"
-            hx-confirm="Clear LOCAL cache only? This deletes .migrate/inventory.yaml. Your BQ tables and DAGs in GCS are NOT touched."
-            class="px-3 py-2 text-sm rounded bg-ink-800 border border-amber-700/40 hover:bg-amber-950/30 text-amber-300 transition-colors flex items-center gap-1.5"
-            title="Delete local cache; next Scan will refetch.">
-      <i data-lucide="trash-2" class="w-4 h-4"></i><span>Clear cache</span>
-    </button>
     <span id="scan-indicator" class="htmx-indicator ml-2 text-xs text-accent-500">Scanning…</span>
   </div>
+  {% endif %}
 </div>
-
-{% if inv %}
-<div class="border-b border-ink-700 mb-4 flex gap-4 text-sm">
-  {% set kinds = [
-    ('notebook', 'notebook',  'Notebooks',           inv.notebooks|length),
-    ('dag',      'git-merge', 'DAGs',                inv.dags|length),
-    ('table',    'table-2',   'Tables (context)',    inv.tables|length),
-  ] %}
-  {% for k, icon, label, count in kinds %}
-    <a href="/inventory?kind={{ k }}"
-       class="py-2 border-b-2 transition-colors flex items-center gap-2
-              {% if kind == k %}border-accent-500 text-accent-500{% else %}border-transparent text-slate-400 hover:text-slate-200{% endif %}">
-      <i data-lucide="{{ icon }}" class="w-4 h-4"></i>
-      <span>{{ label }}</span>
-      <span class="text-xs text-slate-500">({{ count }})</span>
-    </a>
-  {% endfor %}
-</div>
-{% endif %}
 
 <div id="inventory-table">
   {% include "_inventory_kind.html" %}
 </div>
 
 <div id="detail-modal"></div>
-
-<style>
-  .htmx-indicator { opacity: 0; transition: opacity 200ms; }
-  .htmx-request .htmx-indicator { opacity: 1; }
-  .htmx-request.htmx-indicator { opacity: 1; }
-</style>
 {% endblock %}

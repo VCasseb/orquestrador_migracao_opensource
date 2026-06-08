@@ -130,31 +130,69 @@ def parse_notebook_json(content: str, name: str, location: str) -> NotebookMetad
     )
 
 
-def scan_notebooks_bucket(bucket_uri: str, sa_path: str | None = None) -> list[NotebookMetadata]:
-    """List .ipynb files in a GCS prefix and parse each."""
-    from google.cloud import storage
+_NOTEBOOK_EXTS = (".py", ".ipynb")
 
+
+def _split_bucket(bucket_uri: str) -> tuple[str, str]:
+    """`gs://bucket/some/prefix` → (`bucket`, `some/prefix`). Bare bucket is fine too."""
     if bucket_uri.startswith("gs://"):
         bucket_uri = bucket_uri[5:]
+    bucket_uri = bucket_uri.strip("/")
     parts = bucket_uri.split("/", 1)
-    bucket_name = parts[0]
-    prefix = parts[1] if len(parts) > 1 else ""
+    return parts[0], (parts[1] if len(parts) > 1 else "")
 
+
+def scan_gcs_notebooks(
+    bucket_uri: str,
+    folders: list[str] | None = None,
+    sa_path: str | None = None,
+) -> list[NotebookMetadata]:
+    """Scan a GCS lake bucket for notebooks/scripts (.py AND .ipynb).
+
+    `folders` is a list of prefixes within the bucket (e.g. ["scripts", "dags/prod"]).
+    When empty, the whole bucket (or the prefix embedded in bucket_uri) is scanned.
+    Raises on auth / bucket errors so the caller can surface a clear message.
+    """
+    from google.cloud import storage
+
+    bucket_name, base_prefix = _split_bucket(bucket_uri)
     client = (
         storage.Client.from_service_account_json(sa_path)
         if sa_path else storage.Client()
     )
     bucket = client.bucket(bucket_name)
 
+    # Build the list of prefixes to walk (base prefix + each requested folder).
+    folders = [f.strip().strip("/") for f in (folders or []) if f.strip()]
+    if folders:
+        prefixes = []
+        for f in folders:
+            joined = "/".join(p for p in (base_prefix, f) if p)
+            prefixes.append(joined + "/" if joined else "")
+    else:
+        prefixes = [base_prefix + "/" if base_prefix else ""]
+
     out: list[NotebookMetadata] = []
-    for blob in bucket.list_blobs(prefix=prefix):
-        if not blob.name.endswith(".ipynb"):
-            continue
-        name = blob.name.split("/")[-1].replace(".ipynb", "")
-        try:
-            content = blob.download_as_text()
-            nb = parse_notebook_json(content, name=name, location=f"gs://{bucket_name}/{blob.name}")
-            out.append(nb)
-        except Exception:
-            continue
+    seen: set[str] = set()
+    for prefix in prefixes:
+        for blob in bucket.list_blobs(prefix=prefix):
+            full = blob.name
+            if full.endswith("/") or not full.lower().endswith(_NOTEBOOK_EXTS):
+                continue
+            if full in seen:
+                continue
+            seen.add(full)
+            filename = full.split("/")[-1]
+            try:
+                content = blob.download_as_text()
+                nb = parse_notebook_file(filename, content, location=f"gs://{bucket_name}/{full}")
+                out.append(nb)
+            except Exception:
+                # Skip a single unreadable/unparseable file; keep scanning the rest.
+                continue
     return out
+
+
+def scan_notebooks_bucket(bucket_uri: str, sa_path: str | None = None) -> list[NotebookMetadata]:
+    """Back-compat shim: scan the whole bucket/prefix for .py + .ipynb notebooks."""
+    return scan_gcs_notebooks(bucket_uri, folders=None, sa_path=sa_path)

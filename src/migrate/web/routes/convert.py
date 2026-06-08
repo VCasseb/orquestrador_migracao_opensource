@@ -24,7 +24,7 @@ from migrate.core.state.selection import load_selection
 def attach(app: FastAPI, templates: Jinja2Templates) -> None:
 
     @app.get("/convert", response_class=HTMLResponse)
-    def convert_page(request: Request, kind: str = "dag"):
+    def convert_page(request: Request, kind: str = "dag", name: str = ""):
         load_env()
         inv = load_inventory()
         selected = load_selection()
@@ -42,6 +42,7 @@ def attach(app: FastAPI, templates: Jinja2Templates) -> None:
                 "inv": inv,
                 "selected": selected,
                 "kind": kind,
+                "preselect": name,
                 "target_platform": target_platform,
                 "table_conversions": list_conversions(),
                 "dag_conversions": dag_conversions,
@@ -119,6 +120,24 @@ def attach(app: FastAPI, templates: Jinja2Templates) -> None:
                 "extra": {"type": t.type, "source_kind": t.source_kind},
             })
         return JSONResponse({"error": f"Unknown kind: {kind}"}, status_code=400)
+
+    @app.post("/convert/estimate.json")
+    def convert_estimate(
+        kind: str = Form(...), name: str = Form(...),
+        target: str = Form(""), prompt: str = Form(""),
+    ):
+        """Local token + cost estimate for one code — NO API key, NO network call."""
+        from migrate.core.convert.estimate import estimate_item
+        inv = load_inventory()
+        if not inv:
+            return JSONResponse({"error": "no inventory"}, status_code=404)
+        if kind not in ("notebook", "dag"):
+            return JSONResponse({"error": f"estimate not supported for kind: {kind}"}, status_code=400)
+        tp = target or get_env("TARGET_PLATFORM", "databricks")
+        est = estimate_item(inv, kind, name, tp, custom_prompt=prompt)
+        if est is None:
+            return JSONResponse({"error": f"not found: {kind}/{name}"}, status_code=404)
+        return JSONResponse(est)
 
     _CONV_BASE = Path(".migrate/conversions").resolve()
 
@@ -270,6 +289,8 @@ def attach(app: FastAPI, templates: Jinja2Templates) -> None:
                 "output_path": art.output_path,
                 "notes": art.notes,
                 "custom_prompt": art.custom_prompt_used,
+                "input_tokens": art.input_tokens,
+                "output_tokens": art.output_tokens,
                 "error": art.error,
             })
         except Exception as e:

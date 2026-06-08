@@ -60,6 +60,50 @@ def test_gcp() -> TestResult:
     )
 
 
+def test_gcs() -> TestResult:
+    """Test the GCS lake: list a few notebook/script files in the configured
+    bucket + folders. Independent of BigQuery."""
+    bucket_uri = get_env("GCP_NOTEBOOKS_BUCKET")
+    if not bucket_uri:
+        return TestResult(False, "Defina o bucket do lake (GCS)")
+
+    try:
+        from google.cloud import storage
+    except ImportError:
+        return TestResult(False, "google-cloud-storage não instalado")
+
+    from migrate.core.inventory.notebooks import _split_bucket, _NOTEBOOK_EXTS
+
+    sa_path = get_env("GCP_SERVICE_ACCOUNT_JSON") or None
+    folders = [f.strip().strip("/") for f in get_env("GCP_NOTEBOOKS_FOLDERS").split(",") if f.strip()]
+    bucket_name, base_prefix = _split_bucket(bucket_uri)
+
+    try:
+        client = (
+            storage.Client.from_service_account_json(sa_path)
+            if sa_path else storage.Client()
+        )
+        bucket = client.bucket(bucket_name)
+        prefixes = []
+        for f in (folders or [""]):
+            prefixes.append("/".join(p for p in (base_prefix, f) if p))
+        found = 0
+        examples: list[str] = []
+        for prefix in prefixes:
+            for blob in bucket.list_blobs(prefix=(prefix + "/" if prefix else ""), max_results=200):
+                if blob.name.lower().endswith(_NOTEBOOK_EXTS):
+                    found += 1
+                    if len(examples) < 3:
+                        examples.append(blob.name)
+    except Exception as e:
+        return TestResult(False, "Falha ao acessar o GCS", str(e))
+
+    where = f"gs://{bucket_name}" + (f" · pastas: {', '.join(folders)}" if folders else "")
+    if found == 0:
+        return TestResult(False, f"Conectou, mas 0 .py/.ipynb em {where}", "Verifique as pastas.")
+    return TestResult(True, f"{found} arquivo(s) encontrados em {where}", " · ".join(examples))
+
+
 def test_databricks() -> TestResult:
     host = get_env("DATABRICKS_HOST")
     token = get_env("DATABRICKS_TOKEN")

@@ -4,8 +4,8 @@
 <div class="mb-6">
   <h1 class="text-2xl font-semibold text-slate-100">Review queue</h1>
   <p class="text-slate-400 mt-1 text-sm">
-    Approve, reject, or bulk-approve <strong>conversions</strong> before deploy.
-    Approval is required by <code>migrate deploy --mode execute</code> unless you pass <code>--no-approvals</code>.
+    Aprove ou rejeite as <strong>conversões de código</strong> (DAGs / notebooks) antes do deploy.
+    A aprovação é exigida pelo deploy em modo <code>execute</code>.
   </p>
 </div>
 
@@ -25,15 +25,15 @@
     <div class="flex gap-2">
       <button hx-post="/review/bulk-approve" hx-vals='{"stage": "conversion", "filter": "auto"}'
               hx-target="#bulk-result" hx-swap="innerHTML"
-              title="sqlglot clean + confidence high + zero notes"
+              title="Sem erros e sem notas de conversão"
               class="px-3 py-1.5 text-sm rounded bg-emerald-700 hover:bg-emerald-600 text-white">
-        Approve auto-eligible
+        Aprovar limpos
       </button>
       <button hx-post="/review/bulk-approve" hx-vals='{"stage": "conversion", "filter": "all-pending"}'
-              hx-confirm="Approve ALL pending conversions, including LLM-touched and failed?"
+              hx-confirm="Aprovar TODAS as conversões pendentes, inclusive com notas/erros?"
               hx-target="#bulk-result" hx-swap="innerHTML"
               class="px-3 py-1.5 text-sm rounded bg-ink-800 border border-amber-700/40 hover:bg-amber-950/30 text-amber-300">
-        Approve all pending
+        Aprovar todas pendentes
       </button>
     </div>
   </div>

@@ -1,0 +1,19 @@
+{# Generic uploader — auto-submits on file pick. Optional vars: result_id (default 'upload-result'), reload_to (URL to go to after success). #}
+{% set _rid = result_id|default('upload-result') %}
+<form hx-post="/inventory/upload" hx-encoding="multipart/form-data"
+      hx-trigger="change from:find input[type=file]"
+      hx-target="#{{ _rid }}" hx-swap="innerHTML"
+      hx-indicator="#{{ _rid }}-spin"
+      {% if reload_to %}hx-on::after-request="if(event.detail.successful) window.location='{{ reload_to }}'"{% endif %}
+      class="flex items-center gap-2 text-xs flex-wrap">
+  <i data-lucide="upload-cloud" class="w-4 h-4 text-accent-500 flex-shrink-0"></i>
+  <span class="text-slate-300 font-medium mr-1">Subir arquivos</span>
+  <input type="hidden" name="kind" value="auto" />
+  <input type="file" name="files" multiple accept=".py,.ipynb,.sql,.json,.zip"
+         class="text-xs text-slate-300 file:mr-2 file:px-3 file:py-1 file:bg-accent-600 file:border-0 file:rounded file:text-ink-950 file:font-medium file:cursor-pointer hover:file:bg-accent-700" />
+  <span id="{{ _rid }}-spin" class="htmx-indicator text-accent-500 text-[11px]">enviando…</span>
+  <span class="text-slate-500 text-[11px] ml-1">
+    Escolha os arquivos — sobem automaticamente. <code>.py</code> · <code>.ipynb</code> · <code>.sql</code> · <code>.json</code> · <code>.zip</code>. O tipo é detectado automaticamente.
+  </span>
+</form>
+<div id="{{ _rid }}" class="mt-2"></div>

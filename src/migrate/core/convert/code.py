@@ -104,6 +104,8 @@ class CodeConversionArtifact(BaseModel):
     target_suggested_path: str     # where it would land on the target platform
     custom_prompt_used: str = ""
     llm_model_used: str = ""
+    input_tokens: int | None = None      # actual, from the provider response
+    output_tokens: int | None = None     # actual, from the provider response
     notes: list[str] = Field(default_factory=list)
     error: str | None = None
     converted_at: datetime
@@ -111,14 +113,15 @@ class CodeConversionArtifact(BaseModel):
     output_sha: str = ""
 
 
-def _llm_call(system: str, user: str) -> tuple[str, str]:
-    """Dispatches to whichever LLM_PROVIDER is active (anthropic / openai / gemini / bedrock)."""
-    from migrate.core.llm import complete
-    text, model = complete(system, user, max_tokens=8000)
+def _llm_call(system: str, user: str) -> tuple[str, str, dict | None]:
+    """Dispatches to whichever LLM_PROVIDER is active (anthropic / openai / gemini / bedrock).
+    Returns (converted_text, model, usage{input_tokens, output_tokens} | None)."""
+    from migrate.core.llm import complete_with_usage
+    text, model, usage = complete_with_usage(system, user, max_tokens=8000)
     if text.startswith("```"):
         lines = [ln for ln in text.splitlines() if not ln.strip().startswith("```")]
         text = "\n".join(lines).strip()
-    return text, model
+    return text, model, usage
 
 
 def _suggest_target_path(req: CodeConversionRequest) -> str:
@@ -176,8 +179,9 @@ def convert_code(req: CodeConversionRequest) -> CodeConversionArtifact:
         error: str | None = None
         converted_code = ""
         model = ""
+        usage: dict | None = None
         try:
-            converted_code, model = _llm_call(system, user_msg)
+            converted_code, model, usage = _llm_call(system, user_msg)
         except Exception as e:
             error = str(e)
             notes.append(f"LLM call failed: {e}")
@@ -200,6 +204,8 @@ def convert_code(req: CodeConversionRequest) -> CodeConversionArtifact:
             target_suggested_path=target_path,
             custom_prompt_used=req.custom_prompt,
             llm_model_used=model,
+            input_tokens=(usage or {}).get("input_tokens"),
+            output_tokens=(usage or {}).get("output_tokens"),
             notes=notes,
             error=error,
             converted_at=datetime.now(timezone.utc),

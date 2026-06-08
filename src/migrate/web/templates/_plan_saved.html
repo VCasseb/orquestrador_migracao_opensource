@@ -1,3 +1,9 @@
-<div class="px-6 py-3 bg-emerald-950/30 border-b border-emerald-800/40 text-sm text-emerald-300">
-  ✓ Saved <code class="text-emerald-200">{{ path }}</code> with {{ plan.waves|length }} wave(s) covering {{ plan.selected|length }} table(s).
+<div class="px-6 py-3 bg-emerald-950/30 border-b border-emerald-800/40 text-sm text-emerald-300 space-y-1">
+  {% for path, plan in saved %}
+  <div>
+    ✓ Plano salvo <code class="text-emerald-200">{{ path }}</code> —
+    {{ plan.selected|length }} código(s) selecionado(s){% if plan.auto_included %} + {{ plan.auto_included|length }} auto-incluído(s){% endif %},
+    {{ plan.waves|length }} onda(s).
+  </div>
+  {% endfor %}
 </div>

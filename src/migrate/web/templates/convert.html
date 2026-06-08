@@ -18,66 +18,37 @@
   </div>
 </div>
 
-<!-- Kind tabs -->
-<div class="border-b border-ink-700 mb-4 flex gap-4 text-sm">
-  {% set kinds = [
-    ('dag',      'git-merge', 'DAGs',                inv.dags|length if inv else 0),
-    ('notebook', 'notebook',  'Notebooks',           inv.notebooks|length if inv else 0),
-    ('table',    'table-2',   'Tables (legacy SQL)', inv.tables|length if inv else 0),
-  ] %}
-  {% for k, icon, label, count in kinds %}
-    <a href="/convert?kind={{ k }}"
-       class="py-2 border-b-2 transition-colors flex items-center gap-2
-              {% if kind == k %}border-accent-500 text-accent-500{% else %}border-transparent text-slate-400 hover:text-slate-200{% endif %}">
-      <i data-lucide="{{ icon }}" class="w-4 h-4"></i>
-      <span>{{ label }}</span>
-      <span class="text-xs text-slate-500">({{ count }})</span>
-    </a>
-  {% endfor %}
-</div>
-
-{% if not inv %}
+{% if not inv or (not inv.notebooks and not inv.dags) %}
   <div class="bg-ink-900 border border-ink-700 rounded-lg p-12 text-center">
-    <p class="text-sm text-slate-400">Run a <a href="/inventory" class="text-accent-500 hover:underline">scan</a> first.</p>
+    {% if source_connected() %}
+      <p class="text-sm text-slate-400">Nenhum código no inventário. Rode um <a href="/inventory" class="text-accent-500 hover:underline">scan</a> ou envie arquivos.</p>
+    {% else %}
+      <p class="text-sm text-slate-400">Nenhum arquivo ainda. Envie códigos na aba <a href="/upload" class="text-accent-500 hover:underline">Upload</a> para começar.</p>
+    {% endif %}
   </div>
 {% else %}
 
-{# choose the items list per kind #}
-{% if kind == "dag" %}
-  {% set items = inv.dags %}
-  {% set empty_msg = "No DAGs in inventory. Set GCP_COMPOSER_DAG_BUCKET in .env and rescan." %}
-{% elif kind == "notebook" %}
-  {% set items = inv.notebooks %}
-  {% set empty_msg = "No notebooks in inventory. Set GCP_NOTEBOOKS_BUCKET in .env and rescan." %}
-{% else %}
-  {% set items = inv.tables %}
-  {% set empty_msg = "No tables in inventory." %}
-{% endif %}
-
-{% if not items %}
-  <div class="bg-ink-900 border border-ink-700 rounded-lg p-8 text-center text-sm text-slate-400">
-    {{ empty_msg }}
-  </div>
-{% else %}
+{% set preselect_value = (kind ~ ':' ~ preselect) if preselect else '' %}
 
 <!-- Top control row -->
 <div class="bg-ink-900 border border-ink-700 rounded-lg p-4 mb-4 grid grid-cols-12 gap-3 items-end">
   <div class="col-span-4">
-    <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">
-      {% if kind == "dag" %}DAG{% elif kind == "notebook" %}Notebook{% else %}Table{% endif %}
-    </label>
-    <select id="item-select" data-kind="{{ kind }}"
+    <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">Arquivo / código</label>
+    <select id="item-select"
             class="w-full bg-ink-800 border border-ink-700 rounded px-3 py-2 text-sm focus:border-accent-500 focus:outline-none">
-      {% if kind == "dag" %}
-        {% for d in items %}<option value="{{ d.name }}">{{ d.name }} · {{ d.schedule or '—' }}</option>{% endfor %}
-      {% elif kind == "notebook" %}
-        {% for n in items %}<option value="{{ n.name }}">{{ n.name }} · {{ n.kind }} · {{ n.cells|length }} cell(s)</option>{% endfor %}
-      {% else %}
-        {% for t in items %}<option value="{{ t.fqn }}">{{ t.fqn }} ({{ t.type }})</option>{% endfor %}
+      {% if inv.notebooks %}
+      <optgroup label="Notebooks / código">
+        {% for n in inv.notebooks %}<option value="notebook:{{ n.name }}" {% if preselect_value == 'notebook:' ~ n.name %}selected{% endif %}>{{ n.name }} · {{ n.cells|length }} célula(s)</option>{% endfor %}
+      </optgroup>
+      {% endif %}
+      {% if inv.dags %}
+      <optgroup label="DAGs">
+        {% for d in inv.dags %}<option value="dag:{{ d.name }}" {% if preselect_value == 'dag:' ~ d.name %}selected{% endif %}>{{ d.name }} · {{ d.schedule or '—' }}</option>{% endfor %}
+      </optgroup>
       {% endif %}
     </select>
   </div>
-  <div class="col-span-5">
+  <div class="col-span-4">
     <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">
       Custom prompt <span class="text-slate-600 font-normal">(optional)</span>
     </label>
@@ -94,19 +65,36 @@
       <option value="aws">aws</option>
     </select>
   </div>
-  <div class="col-span-1">
+  <div class="col-span-2 flex gap-2">
+    <button id="estimate-btn" title="Estima tokens e custo localmente, sem chamar a API"
+            class="flex-1 px-2 py-2 text-sm rounded bg-ink-800 border border-ink-700 hover:bg-ink-700 text-slate-300 transition-colors flex items-center justify-center gap-1.5">
+      <i data-lucide="calculator" class="w-4 h-4"></i><span>Estimar</span>
+    </button>
     <button id="convert-btn"
-            class="w-full px-3 py-2 text-sm rounded bg-accent-600 hover:bg-accent-700 text-ink-950 font-medium transition-colors flex items-center justify-center gap-1.5">
-      <i data-lucide="sparkles" class="w-4 h-4"></i>
-      <span>Convert</span>
+            class="flex-1 px-2 py-2 text-sm rounded bg-accent-600 hover:bg-accent-700 text-ink-950 font-medium transition-colors flex items-center justify-center gap-1.5">
+      <i data-lucide="sparkles" class="w-4 h-4"></i><span>Converter</span>
     </button>
   </div>
+</div>
+
+<!-- Estimativa local (sem API key) -->
+<div id="estimate-line" class="hidden mb-3 flex items-center gap-3 text-xs px-3 py-2 bg-ink-900 border border-accent-700/40 rounded-lg">
+  <i data-lucide="calculator" class="w-3.5 h-3.5 text-accent-500"></i>
+  <span class="text-slate-400">Estimativa:</span>
+  <span id="est-total" class="text-slate-200 font-semibold">—</span>
+  <span class="text-slate-500">tokens</span>
+  <span id="est-breakdown" class="text-slate-500"></span>
+  <span class="text-slate-600">·</span>
+  <span id="est-cost" class="text-emerald-300">—</span>
+  <span id="est-model" class="text-slate-500"></span>
+  <span class="ml-auto text-slate-600 text-[11px]">cálculo local — não consome tokens</span>
 </div>
 
 <!-- Convert state strip (shows after first convert) -->
 <div id="meta-strip" class="hidden mb-3 flex items-center gap-3 text-xs px-3 py-2 bg-ink-900 border border-ink-700 rounded-lg">
   <span class="text-slate-500">model:</span><code id="meta-model" class="text-slate-300">—</code>
   <span class="text-slate-500">target:</span><code id="meta-target" class="text-slate-300">—</code>
+  <span id="meta-tokens-wrap" class="hidden"><span class="text-slate-500">tokens reais:</span> <code id="meta-tokens" class="text-accent-400">—</code></span>
   <span id="meta-status-wrap"></span>
   <div class="ml-auto flex items-center gap-3">
     <a id="meta-download" href="#" download
@@ -123,7 +111,7 @@
     <div class="px-4 py-2 border-b border-ink-700 flex items-center justify-between text-xs">
       <div class="flex items-center gap-2">
         <i data-lucide="file-code" class="w-3.5 h-3.5 text-slate-500"></i>
-        <span class="text-slate-400 uppercase tracking-wider font-semibold">Original (GCP)</span>
+        <span class="text-slate-400 uppercase tracking-wider font-semibold">Original (origem)</span>
         <code id="source-label" class="text-slate-500 text-[11px] font-mono ml-1 truncate max-w-md">—</code>
       </div>
       <div id="source-extra" class="text-slate-500 text-[11px]"></div>
@@ -163,41 +151,38 @@
 </div>
 
 <!-- History -->
-{% if kind == "dag" %}{% set existing = dag_conversions %}
-{% elif kind == "notebook" %}{% set existing = notebook_conversions %}
-{% else %}{% set existing = table_conversions %}{% endif %}
+{% set existing = dag_conversions + notebook_conversions %}
 {% if existing %}
 <details class="bg-ink-900 border border-ink-700 rounded-lg">
   <summary class="px-4 py-3 cursor-pointer text-sm text-slate-300 hover:text-slate-100 flex items-center gap-2">
     <i data-lucide="history" class="w-4 h-4"></i>
-    <span>History · {{ existing|length }} past conversion(s)</span>
+    <span>Histórico · {{ existing|length }} conversão(ões)</span>
   </summary>
   <div class="border-t border-ink-700 divide-y divide-ink-800">
     {% for p in existing %}
     <div class="px-6 py-2.5 flex items-center justify-between hover:bg-ink-800/40">
       <div class="font-mono text-xs text-slate-400">{{ p.stem.replace('_meta', '') }}</div>
-      {% if kind == 'table' %}
-        {% set fqn_dotted = p.stem.replace('_', '.').replace('.meta', '') %}
-        <button hx-get="/convert/view/{{ fqn_dotted }}" hx-target="#legacy-result" hx-swap="innerHTML"
-                class="px-2.5 py-1 text-xs rounded bg-ink-800 border border-ink-700 hover:bg-ink-700">View (legacy modal)</button>
-      {% else %}
-        <button class="history-load px-2.5 py-1 text-xs rounded bg-ink-800 border border-ink-700 hover:bg-ink-700"
-                data-meta="{{ p }}">Load into panes</button>
-      {% endif %}
+      <button class="history-load px-2.5 py-1 text-xs rounded bg-ink-800 border border-ink-700 hover:bg-ink-700"
+              data-meta="{{ p }}">Carregar nos painéis</button>
     </div>
     {% endfor %}
   </div>
 </details>
-<div id="legacy-result"></div>
 {% endif %}
 
 <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.50.0/min/vs/loader.js"></script>
 <script>
 (function () {
-  const KIND = "{{ kind }}";
   const TARGET = "{{ target_platform }}";
   let sourceEditor, convertedEditor;
   let monacoReady = false;
+
+  // Each <option> value is "<kind>:<name>" (kind = notebook | dag).
+  function parseSel(value) {
+    const i = (value || '').indexOf(':');
+    if (i < 0) return ['notebook', value || ''];
+    return [value.slice(0, i), value.slice(i + 1)];
+  }
 
   require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.50.0/min/vs' } });
   require(['vs/editor/editor.main'], () => {
@@ -220,11 +205,12 @@
     monaco.editor.setModelLanguage(editor.getModel(), lang || 'plaintext');
   }
 
-  async function loadSource(name) {
-    if (!monacoReady || !name) return;
+  async function loadSource(value) {
+    if (!monacoReady || !value) return;
+    const [kind, name] = parseSel(value);
     sourceEditor.setValue('// Loading…');
     try {
-      const r = await fetch(`/convert/source.json?kind=${KIND}&name=${encodeURIComponent(name)}`);
+      const r = await fetch(`/convert/source.json?kind=${kind}&name=${encodeURIComponent(name)}`);
       const data = await r.json();
       if (data.error) {
         sourceEditor.setValue('// ' + data.error);
@@ -244,7 +230,8 @@
 
   async function runConvert() {
     if (!monacoReady) return;
-    const name = document.getElementById('item-select').value;
+    const value = document.getElementById('item-select').value;
+    const [kind, name] = parseSel(value);
     const target = document.getElementById('target-select').value;
     const prompt = document.getElementById('prompt-input').value;
     if (!name) return;
@@ -255,7 +242,7 @@
 
     try {
       const fd = new FormData();
-      fd.append('kind', KIND);
+      fd.append('kind', kind);
       fd.append('name', name);
       fd.append('target', target);
       fd.append('prompt', prompt);
@@ -277,6 +264,17 @@
       strip.classList.remove('hidden');
       document.getElementById('meta-model').textContent = data.model || '—';
       document.getElementById('meta-target').textContent = data.target_path || '—';
+
+      // Actual token usage from the provider (when reported)
+      const tokWrap = document.getElementById('meta-tokens-wrap');
+      if (data.input_tokens != null || data.output_tokens != null) {
+        const i = data.input_tokens ?? '?', o = data.output_tokens ?? '?';
+        const t = (data.input_tokens || 0) + (data.output_tokens || 0);
+        document.getElementById('meta-tokens').textContent = `${t} (in ${i} / out ${o})`;
+        tokWrap.classList.remove('hidden');
+      } else {
+        tokWrap.classList.add('hidden');
+      }
 
       // Wire download link to the local artifact
       const dlBtn = document.getElementById('meta-download');
@@ -313,8 +311,39 @@
     }
   }
 
+  async function runEstimate() {
+    const value = document.getElementById('item-select').value;
+    const [kind, name] = parseSel(value);
+    const target = document.getElementById('target-select').value;
+    const prompt = document.getElementById('prompt-input').value;
+    if (!name) return;
+    const line = document.getElementById('estimate-line');
+    line.classList.remove('hidden');
+    document.getElementById('est-total').textContent = '…';
+    document.getElementById('est-breakdown').textContent = '';
+    document.getElementById('est-cost').textContent = '';
+    document.getElementById('est-model').textContent = '';
+    try {
+      const fd = new FormData();
+      fd.append('kind', kind); fd.append('name', name);
+      fd.append('target', target); fd.append('prompt', prompt);
+      const r = await fetch('/convert/estimate.json', { method: 'POST', body: fd });
+      const d = await r.json();
+      if (d.error) { document.getElementById('est-total').textContent = 'erro: ' + d.error; return; }
+      document.getElementById('est-total').textContent = (d.total_tokens || 0).toLocaleString();
+      document.getElementById('est-breakdown').textContent =
+        `(in ${d.input_tokens.toLocaleString()} / out ~${d.output_tokens.toLocaleString()})`;
+      const cost = '~$' + (d.cost_usd ?? 0).toFixed(4);
+      document.getElementById('est-cost').textContent = d.price_known ? cost : cost + ' (preço estimado)';
+      document.getElementById('est-model').textContent = '· ' + (d.model || '');
+    } catch (e) {
+      document.getElementById('est-total').textContent = 'erro: ' + e;
+    }
+  }
+
   document.getElementById('item-select').addEventListener('change', e => loadSource(e.target.value));
   document.getElementById('convert-btn').addEventListener('click', runConvert);
+  document.getElementById('estimate-btn').addEventListener('click', runEstimate);
 
   document.getElementById('meta-copy').addEventListener('click', e => {
     e.preventDefault();
@@ -398,6 +427,5 @@
   });
 })();
 </script>
-{% endif %}
 {% endif %}
 {% endblock %}

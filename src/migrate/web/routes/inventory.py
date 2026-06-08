@@ -102,15 +102,24 @@ def attach(app: FastAPI, templates: Jinja2Templates) -> None:
 
     @app.post("/inventory/scan")
     def inventory_scan(request: Request, source: str = Form("auto"), kind: str = Form("notebook")):
+        from migrate.core.credentials import get_env, load_env
+        from migrate.core.inventory.scanner import last_scan_errors
         use_sample = source == "sample"
         if source == "auto":
-            from migrate.core.credentials import get_env, load_env
             load_env()
-            use_sample = not get_env("GCP_PROJECT_IDS")
+            has_source = bool(
+                get_env("GCP_NOTEBOOKS_BUCKET")
+                or get_env("GCP_COMPOSER_DAG_BUCKET")
+                or get_env("GCP_PROJECT_IDS")
+            )
+            use_sample = not has_source
+        warnings: list[str] = []
         try:
             inv = run_scan(use_sample=use_sample)
             save_inventory(inv)
             error: str | None = None
+            if not use_sample:
+                warnings = last_scan_errors()
         except Exception as e:
             inv = load_inventory() or Inventory(scanned_at=__import__("datetime").datetime.now(), projects=[], tables=[])
             error = str(e)
@@ -123,6 +132,7 @@ def attach(app: FastAPI, templates: Jinja2Templates) -> None:
                 "kind": kind,
                 "selected": load_selection(),
                 "error": error,
+                "warnings": warnings,
                 "humanize_bytes": _humanize_bytes,
                 "humanize_count": _humanize_count,
                 "filter": {},
@@ -171,27 +181,32 @@ def attach(app: FastAPI, templates: Jinja2Templates) -> None:
     @app.post("/inventory/upload")
     async def inventory_upload(
         request: Request,
-        kind: str = Form(...),
+        kind: str = Form("auto"),
         files: list[UploadFile] = File(...),
     ):
-        """Manual upload — parses uploaded files as if they came from a real scan
-        and merges into inventory.yaml. Idempotent: same name replaces existing entry.
-        Accepts .py / .ipynb files OR .zip bundles (extracted in-memory)."""
+        """Manual upload — accepts arbitrary code/query files and auto-detects whether
+        each is an Airflow DAG or a notebook/code artifact. The file extension is just
+        a label: a DAG, notebook or query can arrive as .py / .ipynb / .sql / .json.
+        kind='auto' (default) detects per file; 'dag'/'notebook' force the type.
+        .zip bundles are extracted in-memory. Idempotent: same name replaces."""
         import io
         import zipfile
 
-        if kind not in ("notebook", "dag"):
+        if kind not in ("notebook", "dag", "auto"):
             return HTMLResponse(f"<div class='text-rose-400 p-3'>Unsupported kind: {kind}</div>", status_code=400)
 
         inv = load_inventory() or Inventory(
             scanned_at=datetime.now(timezone.utc), projects=[], tables=[],
         )
 
-        target_dir = Path(".migrate/uploads") / ("notebooks" if kind == "notebook" else "dags")
-        target_dir.mkdir(parents=True, exist_ok=True)
+        nb_dir = Path(".migrate/uploads/notebooks")
+        dag_dir = Path(".migrate/uploads/dags")
+        nb_dir.mkdir(parents=True, exist_ok=True)
+        dag_dir.mkdir(parents=True, exist_ok=True)
 
-        added: list[str] = []
-        replaced: list[str] = []
+        # added/replaced hold {"name", "type" ("dag"|"notebook"), "ext"} for display.
+        added: list[dict] = []
+        replaced: list[dict] = []
         errors: list[str] = []
 
         # Materialize uploads as a flat list of (filename, content) — handles zips inline
@@ -227,6 +242,18 @@ def attach(app: FastAPI, templates: Jinja2Templates) -> None:
                     errors.append(f"{f.filename}: decode failed — {e}")
 
         for filename, content in materials:
+            low = filename.lower()
+            ext = low.rsplit(".", 1)[-1] if "." in low else ""
+
+            # Decide the type: explicit override, else auto-detect.
+            as_dag = kind == "dag"
+            if kind == "auto" and low.endswith(".py"):
+                try:
+                    as_dag = parse_dag_file(filename, content) is not None
+                except Exception:
+                    as_dag = False
+
+            target_dir = dag_dir if as_dag else nb_dir
             local_path = target_dir / filename
             try:
                 local_path.write_text(content)
@@ -235,41 +262,92 @@ def attach(app: FastAPI, templates: Jinja2Templates) -> None:
                 continue
 
             try:
-                if kind == "notebook":
-                    if not filename.lower().endswith((".py", ".ipynb")):
-                        errors.append(f"{filename}: only .py and .ipynb supported (skipped)")
-                        continue
-                    nb = parse_notebook_file(filename, content, location=str(local_path))
-                    existing = next((i for i, x in enumerate(inv.notebooks) if x.name == nb.name), None)
-                    if existing is not None:
-                        inv.notebooks[existing] = nb
-                        replaced.append(nb.name)
-                    else:
-                        inv.notebooks.append(nb)
-                        added.append(nb.name)
-                else:  # dag
-                    if not filename.lower().endswith(".py"):
-                        errors.append(f"{filename}: DAG must be .py (skipped)")
-                        continue
+                if as_dag:
                     dag = parse_dag_file(str(local_path), content)
                     if not dag:
-                        errors.append(f"{filename}: no DAG() found in source")
+                        errors.append(f"{filename}: nenhum DAG() encontrado no código")
                         continue
                     existing = next((i for i, x in enumerate(inv.dags) if x.name == dag.name), None)
+                    entry = {"name": dag.name, "type": "dag", "ext": ext}
                     if existing is not None:
                         inv.dags[existing] = dag
-                        replaced.append(dag.name)
+                        replaced.append(entry)
                     else:
                         inv.dags.append(dag)
-                        added.append(dag.name)
+                        added.append(entry)
+                else:
+                    nb = parse_notebook_file(filename, content, location=str(local_path))
+                    existing = next((i for i, x in enumerate(inv.notebooks) if x.name == nb.name), None)
+                    entry = {"name": nb.name, "type": "notebook", "ext": ext}
+                    if existing is not None:
+                        inv.notebooks[existing] = nb
+                        replaced.append(entry)
+                    else:
+                        inv.notebooks.append(nb)
+                        added.append(entry)
             except Exception as e:
-                errors.append(f"{filename}: parse failed — {e}")
+                errors.append(f"{filename}: parse falhou — {e}")
 
         save_inventory(inv)
-        return templates.TemplateResponse(
+        resp = templates.TemplateResponse(
             request, "_upload_result.html",
-            {"kind": kind, "added": added, "replaced": replaced, "errors": errors},
+            {"added": added, "replaced": replaced, "errors": errors},
         )
+        # Let pages with a self-refreshing artifact list update without a full reload.
+        if added or replaced:
+            resp.headers["HX-Trigger"] = "artifactsUploaded"
+        return resp
+
+    @app.get("/upload", response_class=HTMLResponse)
+    def upload_page(request: Request):
+        """Offline-first entry point: upload notebooks/DAGs and convert them without
+        any cloud connection. Shown in the nav (instead of Inventory/Lineage) when
+        no source cloud is configured."""
+        inv = load_inventory()
+        return templates.TemplateResponse(
+            request, "upload.html", {"active": "upload", "inv": inv},
+        )
+
+    @app.get("/upload/list", response_class=HTMLResponse)
+    def upload_list(request: Request):
+        inv = load_inventory()
+        return templates.TemplateResponse(
+            request, "_upload_list.html", {"inv": inv},
+        )
+
+    @app.get("/inventory/preview/{kind}/{name:path}")
+    def inventory_preview(request: Request, kind: str, name: str):
+        """Code popup for an uploaded/scanned notebook or DAG — shows the raw source
+        with a shortcut to the Convert flow. Used by the Inventory click-to-preview."""
+        inv = load_inventory()
+        if not inv:
+            return HTMLResponse("<div class='p-4 text-rose-400'>No inventory loaded.</div>")
+
+        if kind == "notebook":
+            nb = inv.notebooks_by_id.get(name)
+            if not nb:
+                return HTMLResponse(f"<div class='p-4 text-rose-400'>Notebook not found: {name}</div>")
+            parts: list[str] = []
+            for c in nb.cells:
+                marker = "# === MARKDOWN ===" if c.cell_type == "markdown" else "# === CODE ==="
+                parts.append(f"{marker}\n{c.source}\n")
+            code = "\n".join(parts) if parts else "(no cells)"
+            return templates.TemplateResponse(
+                request, "_code_preview.html",
+                {"title": nb.name, "subtitle": nb.location, "code": code, "kind": "notebook", "name": nb.name},
+            )
+
+        if kind == "dag":
+            d = inv.dags_by_id.get(name)
+            if not d:
+                return HTMLResponse(f"<div class='p-4 text-rose-400'>DAG not found: {name}</div>")
+            return templates.TemplateResponse(
+                request, "_code_preview.html",
+                {"title": d.name, "subtitle": d.file_path, "code": d.source_code or "(no source captured)",
+                 "kind": "dag", "name": d.name},
+            )
+
+        return HTMLResponse(f"<div class='p-4 text-rose-400'>Unknown kind: {kind}</div>")
 
     @app.get("/inventory/detail/{fqn}")
     def inventory_detail(request: Request, fqn: str):

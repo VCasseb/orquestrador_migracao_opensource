@@ -5,7 +5,7 @@ from migrate.core.credentials import get_env
 DEFAULT_MODEL = "gpt-4o-mini"
 
 
-def complete(system: str, user: str, max_tokens: int = 4000) -> tuple[str, str]:
+def complete_with_usage(system: str, user: str, max_tokens: int = 4000) -> tuple[str, str, dict | None]:
     api_key = get_env("OPENAI_API_KEY")
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY not set")
@@ -20,6 +20,14 @@ def complete(system: str, user: str, max_tokens: int = 4000) -> tuple[str, str]:
         ],
     )
     text = (resp.choices[0].message.content or "").strip()
+    usage = None
+    if getattr(resp, "usage", None):
+        usage = {"input_tokens": resp.usage.prompt_tokens, "output_tokens": resp.usage.completion_tokens}
+    return text, model, usage
+
+
+def complete(system: str, user: str, max_tokens: int = 4000) -> tuple[str, str]:
+    text, model, _ = complete_with_usage(system, user, max_tokens)
     return text, model
 
 

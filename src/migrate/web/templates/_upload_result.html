@@ -1,29 +1,33 @@
-<div class="px-3 py-2 rounded-lg text-sm space-y-1
+{% macro chip(it) %}
+  <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-ink-800 border border-ink-700 text-[11px]">
+    <i data-lucide="{{ 'git-merge' if it.type == 'dag' else 'notebook' }}" class="w-3 h-3 {{ 'text-emerald-400' if it.type == 'dag' else 'text-amber-400' }}"></i>
+    <span class="font-mono text-slate-200">{{ it.name }}</span>
+    <span class="text-slate-500">{{ 'DAG' if it.type == 'dag' else 'notebook' }}</span>
+    {% if it.ext %}<span class="px-1 rounded bg-ink-700 text-slate-400 font-mono">.{{ it.ext }}</span>{% endif %}
+  </span>
+{% endmacro %}
+
+<div class="px-3 py-2 rounded-lg text-sm space-y-2
             {% if errors %}bg-rose-950/30 border border-rose-800/40{% else %}bg-emerald-950/30 border border-emerald-800/40{% endif %}">
   {% if added %}
-    <div class="text-emerald-300">
-      ✓ Added <strong>{{ added|length }}</strong> {{ kind }}(s):
-      <code class="text-emerald-200">{{ added|join(", ") }}</code>
-    </div>
+    <div class="text-emerald-300 text-xs">✓ Adicionado(s) <strong>{{ added|length }}</strong>:</div>
+    <div class="flex flex-wrap gap-1.5">{% for it in added %}{{ chip(it) }}{% endfor %}</div>
   {% endif %}
   {% if replaced %}
-    <div class="text-cyan-300">
-      ↻ Replaced <strong>{{ replaced|length }}</strong> existing {{ kind }}(s):
-      <code class="text-cyan-200">{{ replaced|join(", ") }}</code>
-    </div>
+    <div class="text-cyan-300 text-xs">↻ Substituído(s) <strong>{{ replaced|length }}</strong>:</div>
+    <div class="flex flex-wrap gap-1.5">{% for it in replaced %}{{ chip(it) }}{% endfor %}</div>
   {% endif %}
   {% if errors %}
-    <div class="text-rose-300">
-      ✗ Errors:
+    <div class="text-rose-300 text-xs">
+      ✗ Erros:
       <ul class="ml-3 mt-0.5 text-xs">
         {% for e in errors %}<li>· {{ e }}</li>{% endfor %}
       </ul>
     </div>
   {% endif %}
   {% if added or replaced %}
-    <div class="text-xs text-slate-500 mt-1">
-      Saved to <code>.migrate/uploads/{{ "notebooks" if kind == "notebook" else "dags" }}/</code> and merged into inventory.
-      <a href="/inventory?kind={{ kind }}" class="text-accent-500 hover:underline">Refresh inventory →</a>
+    <div class="text-xs text-slate-500">
+      Salvo em <code>.migrate/uploads/</code> e mesclado ao inventário. O tipo (DAG ou notebook) é detectado automaticamente.
     </div>
   {% endif %}
 </div>

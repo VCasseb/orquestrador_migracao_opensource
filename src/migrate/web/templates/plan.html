@@ -1,153 +1,127 @@
 {% extends "base.html" %}
 {% block title %}Plan Waves · migrate{% endblock %}
 {% block content %}
-<div class="mb-4">
+<div class="mb-6">
   <h1 class="text-2xl font-semibold text-slate-100">Plan Waves</h1>
   <p class="text-slate-400 mt-1 text-sm">
-    Items marked from <a href="/inventory" class="text-accent-500 hover:underline">Inventory</a>
-    are organized into dependency-ordered waves: each wave depends only on previous waves.
-    For notebooks, this follows the <strong>medallion chain</strong> (raw → bronze → silver → gold).
+    Os <strong class="text-slate-300">códigos selecionados</strong> em
+    <a href="/inventory" class="text-accent-500 hover:underline">Inventory</a> /
+    <a href="/upload" class="text-accent-500 hover:underline">Upload</a>
+    formam um <strong class="text-slate-300">lote sequencial</strong> — migrados um atrás do outro, em ordem de dependência
+    (a cadeia upstream é incluída automaticamente para o lote ser completo).
   </p>
 </div>
 
-<!-- kind tabs -->
-<div class="border-b border-ink-700 mb-4 flex gap-4 text-sm">
-  {% set kinds = [
-    ('notebook', 'notebook',  'Notebooks',           per_kind['notebook']|length),
-    ('dag',      'git-merge', 'DAGs',                per_kind['dag']|length),
-    ('table',    'table-2',   'Tables (legacy)',     per_kind['table']|length),
-  ] %}
-  {% for k, icon, label, count in kinds %}
-    <a href="/plan?kind={{ k }}{% if include_upstream %}&include_upstream=1{% endif %}"
-       class="py-2 border-b-2 transition-colors flex items-center gap-2
-              {% if kind == k %}border-accent-500 text-accent-500{% else %}border-transparent text-slate-400 hover:text-slate-200{% endif %}">
-      <i data-lucide="{{ icon }}" class="w-4 h-4"></i>
-      <span>{{ label }}</span>
-      <span class="text-xs text-slate-500">({{ count }} selected)</span>
-    </a>
-  {% endfor %}
-</div>
-
-<form class="mb-4 flex gap-3 items-center bg-ink-900 border border-ink-700 rounded-lg p-3" method="get" action="/plan">
-  <input type="hidden" name="kind" value="{{ kind }}" />
-  <label class="flex items-center gap-2 text-sm text-slate-300">
-    <input type="checkbox" name="include_upstream" value="1" {% if include_upstream %}checked{% endif %}
-           onchange="this.form.submit()" class="accent-accent-500" />
-    <span>Auto-include upstream chain</span>
-  </label>
-  <span class="text-xs text-slate-500">
-    {% if kind == "notebook" %}
-      Adds the notebook(s) that produce the tables your selected notebooks read.
-    {% elif kind == "dag" %}
-      Adds the DAG(s) that produce the tables your selected DAGs read.
-    {% else %}
-      Pulls every dependency table.
-    {% endif %}
-    Off = strict mode.
-  </span>
-</form>
-
+{% if counts.total %}
+<!-- Summary -->
 <div class="grid grid-cols-4 gap-4 mb-6">
   <div class="bg-ink-900 border border-ink-700 rounded-lg p-4">
-    <div class="text-xs uppercase tracking-wider text-slate-500">Selected ({{ kind }})</div>
-    <div class="text-2xl font-semibold text-slate-100 mt-1">{{ per_kind[kind]|length }}</div>
-    <div class="text-xs text-slate-500 mt-1">user-marked</div>
+    <div class="text-xs uppercase tracking-wider text-slate-500">No lote</div>
+    <div class="text-2xl font-semibold text-slate-100 mt-1">{{ counts.total }}</div>
+    <div class="text-xs text-slate-500 mt-1">códigos no total</div>
   </div>
   <div class="bg-ink-900 border border-ink-700 rounded-lg p-4">
-    <div class="text-xs uppercase tracking-wider text-slate-500">Auto-included</div>
-    <div class="text-2xl font-semibold text-accent-500 mt-1">{{ preview.auto_included|length if preview else 0 }}</div>
-    <div class="text-xs text-slate-500 mt-1">pulled from chain</div>
+    <div class="text-xs uppercase tracking-wider text-slate-500">Selecionados</div>
+    <div class="text-2xl font-semibold text-slate-100 mt-1">{{ counts.selected }}</div>
+    <div class="text-xs text-slate-500 mt-1">marcados por você</div>
   </div>
   <div class="bg-ink-900 border border-ink-700 rounded-lg p-4">
-    <div class="text-xs uppercase tracking-wider text-slate-500">Waves</div>
-    <div class="text-2xl font-semibold text-slate-100 mt-1">{{ preview.waves|length if preview else 0 }}</div>
-    <div class="text-xs text-slate-500 mt-1">batches</div>
+    <div class="text-xs uppercase tracking-wider text-slate-500">Auto-incluídos</div>
+    <div class="text-2xl font-semibold text-accent-500 mt-1">{{ counts.auto }}</div>
+    <div class="text-xs text-slate-500 mt-1">puxados da cadeia</div>
   </div>
   <div class="bg-ink-900 border border-ink-700 rounded-lg p-4">
-    <div class="text-xs uppercase tracking-wider text-slate-500">Saved plans</div>
-    <div class="text-2xl font-semibold text-slate-100 mt-1">{{ plans|length }}</div>
-    <div class="text-xs text-slate-500 mt-1">in .migrate/plans/</div>
+    <div class="text-xs uppercase tracking-wider text-slate-500">Tipos</div>
+    <div class="text-2xl font-semibold text-slate-100 mt-1">{{ counts.notebooks }}<span class="text-sm text-amber-400"> nb</span> · {{ counts.dags }}<span class="text-sm text-emerald-400"> dag</span></div>
+    <div class="text-xs text-slate-500 mt-1">notebooks · DAGs</div>
   </div>
 </div>
 
-{% if preview and preview.missing_upstream %}
+{% if batch_estimate %}
+<div class="mb-6 px-4 py-3 bg-ink-900 border border-accent-700/40 rounded-lg flex items-center gap-3 text-sm flex-wrap">
+  <i data-lucide="calculator" class="w-4 h-4 text-accent-500"></i>
+  <span class="text-slate-400">Estimativa do lote:</span>
+  <span class="text-slate-100 font-semibold">{{ "{:,}".format(batch_estimate.total_tokens) }}</span>
+  <span class="text-slate-500">tokens</span>
+  <span class="text-slate-500 text-xs">(entrada {{ "{:,}".format(batch_estimate.input_tokens) }} · saída ~{{ "{:,}".format(batch_estimate.output_tokens) }})</span>
+  <span class="text-slate-600">·</span>
+  <span class="text-emerald-300 font-medium">~${{ "%.2f"|format(batch_estimate.cost_usd) }}</span>
+  {% if not batch_estimate.price_known %}<span class="text-amber-400 text-xs">(preço estimado)</span>{% endif %}
+  <span class="text-slate-500 text-xs">· {{ batch_estimate.model }}</span>
+  <span class="ml-auto text-slate-600 text-[11px]">cálculo local — não consome tokens</span>
+</div>
+{% endif %}
+
+{% if missing %}
 <div class="mb-4 px-4 py-3 bg-amber-950/20 border border-amber-800/30 rounded-lg">
-  <div class="text-xs uppercase tracking-wider text-amber-400 mb-1">⚠ Missing upstream ({{ preview.missing_upstream|length }})</div>
+  <div class="text-xs uppercase tracking-wider text-amber-400 mb-1">⚠ Upstream ausente ({{ missing|length }})</div>
   <p class="text-xs text-amber-200 mb-1">
-    {{ kind|capitalize }}s reference these objects but no notebook/DAG in the inventory writes them
-    (likely external — manual or 3rd-party loads).
+    Os códigos referenciam estes objetos, mas nenhum código no inventário os produz (provavelmente cargas externas / 3rd-party).
   </p>
   <div class="flex flex-wrap gap-1.5 mt-1">
-    {% for u in preview.missing_upstream %}<code class="text-xs px-1.5 py-0.5 rounded bg-amber-950/40 text-amber-300">{{ u }}</code>{% endfor %}
+    {% for u in missing %}<code class="text-xs px-1.5 py-0.5 rounded bg-amber-950/40 text-amber-300">{{ u }}</code>{% endfor %}
   </div>
 </div>
 {% endif %}
 
-{% if preview %}
+<!-- Sequential batch -->
 {% set _layer_color = {'raw': 'slate', 'bronze': 'amber', 'silver': 'cyan', 'gold': 'yellow'} %}
 <div class="bg-ink-900 border border-ink-700 rounded-lg overflow-hidden mb-6">
   <div class="px-6 py-3 border-b border-ink-700 flex items-center justify-between">
-    <h2 class="font-semibold text-slate-100">Wave preview ({{ kind }})</h2>
+    <h2 class="font-semibold text-slate-100 flex items-center gap-2">
+      <i data-lucide="list-ordered" class="w-4 h-4 text-accent-500"></i>
+      Ordem de execução do lote
+    </h2>
     <form hx-post="/plan/save" hx-target="#save-result" hx-swap="innerHTML" class="flex gap-2 items-center">
-      <input type="hidden" name="kind" value="{{ kind }}" />
-      <input type="hidden" name="include_upstream" value="{{ '1' if include_upstream else '' }}" />
-      <input name="plan_name" type="text" placeholder="plan-name (e.g., cartoes-q2)"
-             class="bg-ink-800 border border-ink-700 rounded px-3 py-1.5 text-sm w-48" required />
-      <button class="px-3 py-1.5 text-sm rounded bg-accent-600 hover:bg-accent-700 text-ink-950 font-medium">Save plan</button>
+      <input name="plan_name" type="text" placeholder="nome do lote (ex.: cartoes-q2)"
+             class="bg-ink-800 border border-ink-700 rounded px-3 py-1.5 text-sm w-52" required />
+      <button class="px-3 py-1.5 text-sm rounded bg-accent-600 hover:bg-accent-700 text-ink-950 font-medium flex items-center gap-1.5">
+        <i data-lucide="save" class="w-4 h-4"></i><span>Salvar lote</span>
+      </button>
     </form>
   </div>
   <div id="save-result"></div>
-  <div class="divide-y divide-ink-800">
-    {% for w in preview.waves %}
-    <div class="px-6 py-4">
-      <div class="flex items-center gap-3 mb-3">
-        <div class="w-8 h-8 rounded-full bg-accent-600 text-ink-950 font-bold flex items-center justify-center text-sm">{{ w.index }}</div>
-        <div class="font-semibold text-slate-200">Wave {{ w.index }}</div>
-        <div class="text-xs text-slate-500">{{ w.items|length }} item(s)</div>
-        {% set selected_in = w.items | selectattr('origin', 'equalto', 'selected') | list | length %}
-        {% set auto_in = w.items | selectattr('origin', 'equalto', 'auto-included') | list | length %}
-        {% if auto_in %}
-          <div class="text-xs">
-            <span class="text-slate-300">{{ selected_in }} selected</span>
-            <span class="text-slate-500 mx-1">·</span>
-            <span class="text-accent-500">{{ auto_in }} auto</span>
+  <ol class="divide-y divide-ink-800">
+    {% for s in sequence %}
+    {% set it = s.item %}
+    {% set lyc = _layer_color.get(it.layer, 'slate') %}
+    <li class="px-6 py-3 flex items-center gap-4 hover:bg-ink-800/40">
+      <div class="w-8 h-8 flex-shrink-0 rounded-full bg-ink-800 border border-ink-700 text-slate-300 font-bold flex items-center justify-center text-sm">{{ s.step }}</div>
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-2">
+          <i data-lucide="{{ 'git-merge' if s.code_type == 'dag' else 'notebook' }}" class="w-3.5 h-3.5 {{ 'text-emerald-400' if s.code_type == 'dag' else 'text-amber-400' }} flex-shrink-0"></i>
+          <span class="font-mono text-sm text-slate-200 truncate">{{ it.fqn }}</span>
+          {% if it.layer %}<span class="px-1.5 py-0.5 rounded bg-{{ lyc }}-950/40 text-{{ lyc }}-300 font-mono text-[10px] uppercase">{{ it.layer }}</span>{% endif %}
+          <span class="px-1.5 py-0.5 rounded bg-ink-800 border border-ink-700 text-slate-400 text-[10px] uppercase">{{ 'DAG' if s.code_type == 'dag' else 'notebook' }}</span>
+          {% if it.origin == 'selected' %}
+            <span class="text-accent-500 text-[11px]">★ selecionado</span>
+          {% else %}
+            <span class="text-slate-500 text-[11px]">↑ auto</span>
+          {% endif %}
+        </div>
+        {% if it.reads or it.writes %}
+          <div class="mt-1 text-[11px] text-slate-500 flex flex-wrap gap-x-4 gap-y-0.5">
+            {% if it.reads %}<span>lê: <code class="text-slate-400">{{ it.reads|join(", ") }}</code></span>{% endif %}
+            {% if it.writes %}<span>escreve: <code class="text-cyan-400">{{ it.writes|join(", ") }}</code></span>{% endif %}
           </div>
         {% endif %}
       </div>
-      <div class="grid grid-cols-2 gap-2">
-        {% for it in w.items %}
-        {% set lyc = _layer_color.get(it.layer, 'slate') %}
-        <div class="bg-ink-800 border {% if it.origin == 'selected' %}border-accent-600/40{% else %}border-ink-700{% endif %} rounded px-3 py-2 text-sm">
-          <div class="flex items-center justify-between gap-2">
-            <div class="min-w-0 flex-1">
-              <div class="font-mono text-slate-200 text-xs truncate">{{ it.fqn }}</div>
-              <div class="text-xs text-slate-500 mt-0.5 flex items-center gap-2">
-                {% if it.layer %}<span class="px-1.5 py-0.5 rounded bg-{{ lyc }}-950/40 text-{{ lyc }}-300 font-mono text-[10px] uppercase">{{ it.layer }}</span>{% endif %}
-                <span>{{ it.type }}</span>
-                {% if it.origin == 'selected' %}<span class="text-accent-500">★</span>{% else %}<span class="text-slate-500">↑ auto</span>{% endif %}
-              </div>
-            </div>
-          </div>
-          {% if it.reads or it.writes %}
-            <div class="mt-1.5 text-[11px] text-slate-500 space-y-0.5">
-              {% if it.reads %}<div>reads: <code class="text-slate-400">{{ it.reads|join(", ") }}</code></div>{% endif %}
-              {% if it.writes %}<div>writes: <code class="text-cyan-400">{{ it.writes|join(", ") }}</code></div>{% endif %}
-            </div>
-          {% endif %}
-        </div>
-        {% endfor %}
-      </div>
-    </div>
+      <a href="/convert?kind={{ s.code_type }}&name={{ it.fqn }}"
+         class="px-2.5 py-1 text-xs rounded bg-ink-800 border border-ink-700 hover:bg-ink-700 text-slate-300 inline-flex items-center gap-1.5 flex-shrink-0">
+        <i data-lucide="sparkles" class="w-3.5 h-3.5"></i><span>Converter</span>
+      </a>
+    </li>
     {% endfor %}
-  </div>
+  </ol>
 </div>
 {% else %}
 <div class="bg-ink-900 border border-ink-700 rounded-lg p-12 text-center">
-  <div class="text-3xl mb-3 opacity-40"><i data-lucide="git-merge" class="inline w-8 h-8"></i></div>
-  <h2 class="text-lg font-semibold text-slate-200">Nothing selected for {{ kind }}s</h2>
+  <div class="text-3xl mb-3 opacity-40"><i data-lucide="list-ordered" class="inline w-8 h-8"></i></div>
+  <h2 class="text-lg font-semibold text-slate-200">Nenhum código selecionado</h2>
   <p class="text-slate-500 mt-2 text-sm">
-    Open <a href="/inventory?kind={{ kind }}" class="text-accent-500 hover:underline">Inventory · {{ kind }}s</a>
-    and click <span class="text-accent-500">+ add</span> on items to build a wave plan.
+    Abra o <a href="/inventory" class="text-accent-500 hover:underline">Inventory</a>
+    {% if not source_connected() %}(ou a aba <a href="/upload" class="text-accent-500 hover:underline">Upload</a>){% endif %}
+    e clique em <span class="text-accent-500">+ add</span> nos códigos para montar o lote de migração.
   </p>
 </div>
 {% endif %}
@@ -155,17 +129,17 @@
 {% if plans %}
 <div class="bg-ink-900 border border-ink-700 rounded-lg overflow-hidden">
   <div class="px-6 py-3 border-b border-ink-700">
-    <h2 class="font-semibold text-slate-100">Saved plans</h2>
+    <h2 class="font-semibold text-slate-100">Lotes salvos</h2>
   </div>
   <div class="divide-y divide-ink-800">
     {% for p in plans %}
     <div class="px-6 py-3 flex items-center justify-between">
       <div>
-        <div class="font-mono text-sm text-slate-200">{{ p.name }}</div>
+        <div class="font-mono text-sm text-slate-200">{{ p.stem }}</div>
         <div class="text-xs text-slate-500">.migrate/plans/{{ p.name }}</div>
       </div>
       <button hx-get="/plan/view/{{ p.stem }}" hx-target="#plan-view" hx-swap="innerHTML"
-              class="px-3 py-1.5 text-sm rounded bg-ink-800 border border-ink-700 hover:bg-ink-700">View</button>
+              class="px-3 py-1.5 text-sm rounded bg-ink-800 border border-ink-700 hover:bg-ink-700">Ver</button>
     </div>
     {% endfor %}
   </div>

@@ -1,0 +1,77 @@
+<div class="bg-ink-900 border border-ink-700 rounded-lg overflow-hidden" id="card-target-inner">
+  <div class="px-6 py-4 border-b border-ink-700 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-2 h-2 rounded-full bg-emerald-500"></div>
+      <h2 class="font-semibold text-slate-100">Plataforma de destino</h2>
+    </div>
+    {% if result and result.saved %}<span class="text-xs text-emerald-400">Salvo</span>{% endif %}
+  </div>
+
+  <div class="px-6 py-5 space-y-5">
+    <p class="text-sm text-slate-400">
+      Define o formato em que a IA gera os artefatos convertidos. Nada é enviado para a nuvem aqui — a conversão
+      acontece localmente e os arquivos ficam em <code class="text-accent-500">.migrate/conversions/</code>.
+    </p>
+
+    <div class="grid grid-cols-2 gap-3">
+      {% set platforms = [
+        ('databricks', 'Databricks', 'Notebook + Workflow (Asset Bundle YAML)', 'box'),
+        ('aws',        'AWS',        'PySpark/EMR + Airflow DAG (MWAA)',        'cloud'),
+      ] %}
+      {% for value, name, desc, icon in platforms %}
+      {% set active = state.target_platform == value %}
+      <button type="button"
+              hx-post="/connections/target/select"
+              hx-vals='{"platform": "{{ value }}"}'
+              hx-target="#card-target"
+              hx-swap="innerHTML"
+              class="text-left rounded-lg border p-4 transition-colors
+                     {% if active %}border-accent-500 bg-accent-500/10{% else %}border-ink-700 bg-ink-800 hover:border-ink-600{% endif %}">
+        <div class="flex items-center justify-between mb-1">
+          <span class="flex items-center gap-2 font-semibold {% if active %}text-accent-500{% else %}text-slate-200{% endif %}">
+            <i data-lucide="{{ icon }}" class="w-4 h-4"></i>{{ name }}
+          </span>
+          {% if active %}<i data-lucide="check-circle-2" class="w-4 h-4 text-accent-500"></i>{% endif %}
+        </div>
+        <div class="text-xs text-slate-500">{{ desc }}</div>
+      </button>
+      {% endfor %}
+    </div>
+
+    <form class="space-y-4 pt-1"
+          hx-post="/connections/target/save-paths"
+          hx-target="#card-target"
+          hx-swap="innerHTML">
+      {% if state.target_platform == 'databricks' %}
+        <div>
+          <label class="block text-sm text-slate-400 mb-1">Prefixo no Workspace <span class="text-slate-600 font-normal">(onde os artefatos vão)</span></label>
+          <input type="text" name="target_databricks_workspace_prefix"
+                 value="{{ state.target.databricks_workspace_prefix }}"
+                 placeholder="/Workspace/migration"
+                 class="w-full bg-ink-800 border border-ink-700 rounded px-3 py-2 text-sm focus:border-accent-500 focus:outline-none" />
+        </div>
+      {% else %}
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm text-slate-400 mb-1">Prefixo S3 (notebooks)</label>
+            <input type="text" name="target_s3_notebooks_prefix"
+                   value="{{ state.target.s3_notebooks_prefix }}"
+                   placeholder="s3://acme-data-notebooks/migration"
+                   class="w-full bg-ink-800 border border-ink-700 rounded px-3 py-2 text-sm focus:border-accent-500 focus:outline-none" />
+          </div>
+          <div>
+            <label class="block text-sm text-slate-400 mb-1">Prefixo MWAA (DAGs)</label>
+            <input type="text" name="target_mwaa_dags_prefix"
+                   value="{{ state.target.mwaa_dags_prefix }}"
+                   placeholder="s3://acme-mwaa-bucket/dags"
+                   class="w-full bg-ink-800 border border-ink-700 rounded px-3 py-2 text-sm focus:border-accent-500 focus:outline-none" />
+          </div>
+        </div>
+      {% endif %}
+      <button type="submit"
+              class="px-4 py-2 text-sm rounded bg-accent-600 hover:bg-accent-700 text-ink-950 font-medium transition-colors">
+        Salvar caminhos
+      </button>
+    </form>
+  </div>
+</div>

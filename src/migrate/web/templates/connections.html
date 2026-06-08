@@ -3,16 +3,47 @@
 {% block content %}
 <div class="mb-8">
   <h1 class="text-2xl font-semibold text-slate-100">Connections</h1>
-  <p class="text-slate-400 mt-1">Configure access to GCP, Databricks, and your LLM provider. Credentials saved to <code class="text-accent-500">.env</code> (gitignored).</p>
+  <p class="text-slate-400 mt-1">Configure a <span class="text-slate-300">origem</span> dos artefatos, o <span class="text-slate-300">destino</span> da migração e o motor de IA. Credenciais salvas em <code class="text-accent-500">.env</code> (gitignored).</p>
+</div>
+
+<!-- Fluxo Origem → Destino -->
+<div class="mb-8 flex items-center gap-3 text-sm">
+  <span class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-ink-900 border border-ink-700">
+    <span class="w-1.5 h-1.5 rounded-full {% if state.gcp.connected %}bg-emerald-500{% else %}bg-slate-600{% endif %}"></span>
+    <span class="text-slate-300">Origem</span>
+    <span class="text-slate-500 text-xs">{% if state.gcp.connected %}GCP conectado{% else %}upload manual{% endif %}</span>
+  </span>
+  <i data-lucide="arrow-right" class="w-4 h-4 text-slate-600"></i>
+  <span class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-ink-900 border border-ink-700">
+    <i data-lucide="sparkles" class="w-3.5 h-3.5 text-accent-500"></i>
+    <span class="text-slate-300">IA</span>
+    <span class="text-slate-500 text-xs">{{ state.active_llm }}</span>
+  </span>
+  <i data-lucide="arrow-right" class="w-4 h-4 text-slate-600"></i>
+  <span class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-ink-900 border border-ink-700">
+    <span class="w-1.5 h-1.5 rounded-full bg-accent-500"></span>
+    <span class="text-slate-300">Destino</span>
+    <span class="text-slate-500 text-xs">{{ state.target_platform }}</span>
+  </span>
 </div>
 
 <div class="space-y-6">
-  <h2 class="text-xs uppercase tracking-wider text-slate-500 mt-2">Cloud / data sources</h2>
+  <div class="flex items-center gap-2 mt-2">
+    <i data-lucide="database" class="w-4 h-4 text-slate-500"></i>
+    <h2 class="text-xs uppercase tracking-wider text-slate-400 font-semibold">Origem — de onde vêm os artefatos</h2>
+  </div>
   <div id="card-gcp">{% include "_card_gcp.html" %}</div>
-  <div id="card-databricks">{% include "_card_databricks.html" %}</div>
-  {% include "_card_aws.html" %}
 
-  <h2 class="text-xs uppercase tracking-wider text-slate-500 mt-6">AI engine — pick one</h2>
+  <div class="flex items-center gap-2 mt-6">
+    <i data-lucide="target" class="w-4 h-4 text-slate-500"></i>
+    <h2 class="text-xs uppercase tracking-wider text-slate-400 font-semibold">Destino — para onde a migração gera</h2>
+  </div>
+  <div id="card-target">{% include "_card_target.html" %}</div>
+
+  <div class="flex items-center gap-2 mt-6">
+    <i data-lucide="sparkles" class="w-4 h-4 text-slate-500"></i>
+    <h2 class="text-xs uppercase tracking-wider text-slate-400 font-semibold">Motor de IA — escolha um</h2>
+  </div>
 
   <div class="bg-ink-900 border border-ink-700 rounded-lg p-4">
     <label class="block text-xs uppercase tracking-wider text-slate-500 mb-2">Active engine</label>

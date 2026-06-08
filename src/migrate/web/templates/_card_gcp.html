@@ -1,42 +1,102 @@
 <div class="bg-ink-900 border border-ink-700 rounded-lg overflow-hidden" id="card-gcp-inner">
   <div class="px-6 py-4 border-b border-ink-700 flex items-center justify-between">
     <div class="flex items-center gap-3">
-      <div class="w-2 h-2 rounded-full {% if state.gcp.project_ids %}bg-emerald-500{% else %}bg-slate-600{% endif %}"></div>
-      <h2 class="font-semibold text-slate-100">GCP / BigQuery</h2>
+      <div class="w-2 h-2 rounded-full {% if state.gcp.connected %}bg-emerald-500{% else %}bg-slate-600{% endif %}"></div>
+      <h2 class="font-semibold text-slate-100">GCP — lake GCS (origem)</h2>
+      {% if state.gcp.connected %}
+        <span class="text-xs px-2 py-0.5 rounded-full bg-emerald-950/40 border border-emerald-800/40 text-emerald-300">Conectado</span>
+      {% else %}
+        <span class="text-xs px-2 py-0.5 rounded-full bg-ink-800 border border-ink-700 text-slate-400">Não conectado</span>
+      {% endif %}
     </div>
-    {% if result and result.saved %}<span class="text-xs text-emerald-400">Saved</span>{% endif %}
+    {% if result and result.saved %}<span class="text-xs text-emerald-400">Salvo</span>{% endif %}
   </div>
-  <form class="px-6 py-5 space-y-4"
+  {% if not state.gcp.connected %}
+  <div class="px-6 pt-4 -mb-1">
+    <div class="px-3 py-2 rounded bg-ink-800 border border-ink-700 text-xs text-slate-400 flex items-center gap-2">
+      <i data-lucide="info" class="w-3.5 h-3.5 text-slate-500 flex-shrink-0"></i>
+      <span>Opcional. Sem conexão com a origem, use a aba <a href="/upload" class="text-accent-500 hover:underline">Upload</a> para enviar notebooks e DAGs manualmente e seguir o fluxo de conversão.</span>
+    </div>
+  </div>
+  {% endif %}
+  <form class="px-6 py-5 space-y-5"
         hx-post="/connections/gcp/save"
         hx-target="#card-gcp"
         hx-swap="innerHTML">
-    <div>
-      <label class="block text-sm text-slate-400 mb-1">Service Account JSON path <span class="text-slate-600 font-normal">(optional — leave empty to use ADC)</span></label>
-      <input type="text" name="gcp_service_account_json"
-             value="{{ state.gcp.service_account_json }}"
-             placeholder="/path/to/sa.json (or empty for `gcloud auth application-default login`)"
-             class="w-full bg-ink-800 border border-ink-700 rounded px-3 py-2 text-sm focus:border-accent-500 focus:outline-none" />
-    </div>
-    <div>
-      <label class="block text-sm text-slate-400 mb-1">Project IDs <span class="text-slate-600 font-normal">(comma-separated)</span></label>
-      <input type="text" name="gcp_project_ids"
-             value="{{ state.gcp.project_ids }}"
-             placeholder="prj-finance-prod,prj-marketing-prod,prj-data-prod"
-             class="w-full bg-ink-800 border border-ink-700 rounded px-3 py-2 text-sm focus:border-accent-500 focus:outline-none" />
-    </div>
-    <div class="flex items-center gap-3 pt-2">
+
+    <!-- Lake GCS: onde os notebooks/scripts vivem (origem principal) -->
+    <div class="space-y-3">
+      <div class="text-xs uppercase tracking-wider text-slate-400 font-semibold flex items-center gap-2">
+        <i data-lucide="folder" class="w-3.5 h-3.5"></i> Lake GCS — notebooks / scripts
+      </div>
+      <div>
+        <label class="block text-sm text-slate-400 mb-1">Bucket do lake (GCS)</label>
+        <input type="text" name="gcp_notebooks_bucket"
+               value="{{ state.gcp.notebooks_bucket }}"
+               placeholder="gs://acme-data-lake  (ou acme-data-lake)"
+               class="w-full bg-ink-800 border border-ink-700 rounded px-3 py-2 text-sm focus:border-accent-500 focus:outline-none" />
+      </div>
+      <div>
+        <label class="block text-sm text-slate-400 mb-1">Pastas <span class="text-slate-600 font-normal">(vírgula — ex.: scripts, notebooks/prod)</span></label>
+        <input type="text" name="gcp_notebooks_folders"
+               value="{{ state.gcp.notebooks_folders }}"
+               placeholder="scripts"
+               class="w-full bg-ink-800 border border-ink-700 rounded px-3 py-2 text-sm focus:border-accent-500 focus:outline-none" />
+        <p class="text-xs text-slate-500 mt-1">Lê <code>.py</code> e <code>.ipynb</code> dessas pastas. Vazio = bucket inteiro.</p>
+      </div>
+      <div>
+        <label class="block text-sm text-slate-400 mb-1">Composer DAG bucket <span class="text-slate-600 font-normal">(opcional)</span></label>
+        <input type="text" name="gcp_composer_dag_bucket"
+               value="{{ state.gcp.composer_bucket }}"
+               placeholder="gs://us-central1-acme-composer-bucket/dags"
+               class="w-full bg-ink-800 border border-ink-700 rounded px-3 py-2 text-sm focus:border-accent-500 focus:outline-none" />
+      </div>
       <button type="button"
-              hx-post="/connections/gcp/test"
+              hx-post="/connections/gcp/test-gcs"
               hx-target="#test-result-gcp"
               hx-swap="innerHTML"
-              class="px-4 py-2 text-sm rounded bg-ink-800 border border-ink-700 hover:bg-ink-700 hover:border-accent-600 transition-colors">
-        Test connection
+              class="px-4 py-2 text-sm rounded bg-ink-800 border border-ink-700 hover:bg-ink-700 hover:border-accent-600 transition-colors flex items-center gap-1.5">
+        <i data-lucide="folder-search" class="w-4 h-4"></i> Testar GCS
       </button>
+    </div>
+
+    <!-- BigQuery: contexto de linhagem (opcional) -->
+    <details class="border-t border-ink-800 pt-3">
+      <summary class="text-xs uppercase tracking-wider text-slate-500 font-semibold cursor-pointer">BigQuery — contexto de linhagem (opcional)</summary>
+      <div class="space-y-3 mt-3">
+        <div>
+          <label class="block text-sm text-slate-400 mb-1">Project IDs <span class="text-slate-600 font-normal">(vírgula)</span></label>
+          <input type="text" name="gcp_project_ids"
+                 value="{{ state.gcp.project_ids }}"
+                 placeholder="prj-finance-prod,prj-data-prod"
+                 class="w-full bg-ink-800 border border-ink-700 rounded px-3 py-2 text-sm focus:border-accent-500 focus:outline-none" />
+        </div>
+        <button type="button"
+                hx-post="/connections/gcp/test"
+                hx-target="#test-result-gcp"
+                hx-swap="innerHTML"
+                class="px-4 py-2 text-sm rounded bg-ink-800 border border-ink-700 hover:bg-ink-700 transition-colors">
+          Testar BigQuery
+        </button>
+      </div>
+    </details>
+
+    <!-- Auth compartilhada -->
+    <div class="border-t border-ink-800 pt-3">
+      <label class="block text-sm text-slate-400 mb-1">Service Account JSON <span class="text-slate-600 font-normal">(opcional — vazio usa ADC / gcloud)</span></label>
+      <input type="text" name="gcp_service_account_json"
+             value="{{ state.gcp.service_account_json }}"
+             placeholder="/path/to/sa.json"
+             class="w-full bg-ink-800 border border-ink-700 rounded px-3 py-2 text-sm focus:border-accent-500 focus:outline-none" />
+    </div>
+
+    <div class="flex items-center gap-3 pt-1">
       <button type="submit"
               class="px-4 py-2 text-sm rounded bg-accent-600 hover:bg-accent-700 text-ink-950 font-medium transition-colors">
-        Save
+        Salvar
       </button>
-      <div id="test-result-gcp" class="flex-1"></div>
+      <span class="text-xs text-slate-500">Depois vá em <a href="/inventory" class="text-accent-500 hover:underline">Inventory → Scan now</a> para puxar os notebooks.</span>
     </div>
+    <div id="test-result-gcp"></div>
   </form>
 </div>

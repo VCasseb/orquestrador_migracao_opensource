@@ -11,8 +11,8 @@ from migrate.core.credentials import (
     get_env,
     load_env,
     test_anthropic,
-    test_databricks,
     test_gcp,
+    test_gcs,
     update_env,
 )
 
@@ -28,17 +28,25 @@ def mask(value: str, keep: int = 4) -> str:
 def current_state() -> dict[str, Any]:
     load_env()
     active_llm = (get_env("LLM_PROVIDER", "anthropic") or "anthropic").lower()
+    target_platform = (get_env("TARGET_PLATFORM", "databricks") or "databricks").lower()
     return {
         "gcp": {
             "service_account_json": get_env("GCP_SERVICE_ACCOUNT_JSON"),
             "project_ids": get_env("GCP_PROJECT_IDS"),
+            "notebooks_bucket": get_env("GCP_NOTEBOOKS_BUCKET"),
+            "notebooks_folders": get_env("GCP_NOTEBOOKS_FOLDERS"),
+            "composer_bucket": get_env("GCP_COMPOSER_DAG_BUCKET"),
+            "connected": bool(
+                get_env("GCP_PROJECT_IDS")
+                or get_env("GCP_NOTEBOOKS_BUCKET")
+                or get_env("GCP_COMPOSER_DAG_BUCKET")
+            ),
         },
-        "databricks": {
-            "host": get_env("DATABRICKS_HOST"),
-            "token_masked": mask(get_env("DATABRICKS_TOKEN")),
-            "has_token": bool(get_env("DATABRICKS_TOKEN")),
-            "default_catalog": get_env("DATABRICKS_DEFAULT_CATALOG"),
-            "warehouse_id": get_env("DATABRICKS_SQL_WAREHOUSE_ID"),
+        "target_platform": target_platform,
+        "target": {
+            "databricks_workspace_prefix": get_env("TARGET_DATABRICKS_WORKSPACE_PREFIX", "/Workspace/migration"),
+            "s3_notebooks_prefix": get_env("TARGET_S3_NOTEBOOKS_PREFIX", "s3://acme-data-notebooks/migration"),
+            "mwaa_dags_prefix": get_env("TARGET_MWAA_DAGS_PREFIX", "s3://acme-mwaa-bucket/dags"),
         },
         "active_llm": active_llm,
         "anthropic": {
@@ -76,10 +84,16 @@ def attach(app: FastAPI, templates: Jinja2Templates) -> None:
         request: Request,
         gcp_service_account_json: str = Form(""),
         gcp_project_ids: str = Form(""),
+        gcp_notebooks_bucket: str = Form(""),
+        gcp_notebooks_folders: str = Form(""),
+        gcp_composer_dag_bucket: str = Form(""),
     ):
         update_env({
             "GCP_SERVICE_ACCOUNT_JSON": gcp_service_account_json.strip(),
             "GCP_PROJECT_IDS": gcp_project_ids.strip(),
+            "GCP_NOTEBOOKS_BUCKET": gcp_notebooks_bucket.strip(),
+            "GCP_NOTEBOOKS_FOLDERS": gcp_notebooks_folders.strip(),
+            "GCP_COMPOSER_DAG_BUCKET": gcp_composer_dag_bucket.strip(),
         })
         return templates.TemplateResponse(
             request,
@@ -97,36 +111,47 @@ def attach(app: FastAPI, templates: Jinja2Templates) -> None:
             {"result": result, "service": "gcp"},
         )
 
-    @app.post("/connections/databricks/save")
-    def save_databricks(
-        request: Request,
-        databricks_host: str = Form(""),
-        databricks_token: str = Form(""),
-        databricks_default_catalog: str = Form(""),
-        databricks_sql_warehouse_id: str = Form(""),
-    ):
-        updates = {
-            "DATABRICKS_HOST": databricks_host.strip(),
-            "DATABRICKS_DEFAULT_CATALOG": databricks_default_catalog.strip(),
-            "DATABRICKS_SQL_WAREHOUSE_ID": databricks_sql_warehouse_id.strip(),
-        }
-        if databricks_token.strip():
-            updates["DATABRICKS_TOKEN"] = databricks_token.strip()
-        update_env(updates)
-        return templates.TemplateResponse(
-            request,
-            "_card_databricks.html",
-            {"state": current_state(), "result": {"saved": True}},
-        )
-
-    @app.post("/connections/databricks/test")
-    def run_test_databricks(request: Request):
+    @app.post("/connections/gcp/test-gcs")
+    def run_test_gcs(request: Request):
         load_env()
-        result = test_databricks()
+        result = test_gcs()
         return templates.TemplateResponse(
             request,
             "_test_result.html",
-            {"result": result, "service": "databricks"},
+            {"result": result, "service": "gcs"},
+        )
+
+    @app.post("/connections/target/select")
+    def select_target(request: Request, platform: str = Form(...)):
+        """Pick the destination platform — sets TARGET_PLATFORM in .env and returns
+        the refreshed destination card. Drives the output format of all conversions."""
+        if platform not in ("databricks", "aws"):
+            return HTMLResponse(f"<div class='text-rose-400'>Unknown platform: {platform}</div>", status_code=400)
+        update_env({"TARGET_PLATFORM": platform})
+        return templates.TemplateResponse(
+            request, "_card_target.html",
+            {"state": current_state(), "result": {"saved": True}},
+        )
+
+    @app.post("/connections/target/save-paths")
+    def save_target_paths(
+        request: Request,
+        target_databricks_workspace_prefix: str = Form(""),
+        target_s3_notebooks_prefix: str = Form(""),
+        target_mwaa_dags_prefix: str = Form(""),
+    ):
+        updates: dict[str, str] = {}
+        if target_databricks_workspace_prefix.strip():
+            updates["TARGET_DATABRICKS_WORKSPACE_PREFIX"] = target_databricks_workspace_prefix.strip()
+        if target_s3_notebooks_prefix.strip():
+            updates["TARGET_S3_NOTEBOOKS_PREFIX"] = target_s3_notebooks_prefix.strip()
+        if target_mwaa_dags_prefix.strip():
+            updates["TARGET_MWAA_DAGS_PREFIX"] = target_mwaa_dags_prefix.strip()
+        if updates:
+            update_env(updates)
+        return templates.TemplateResponse(
+            request, "_card_target.html",
+            {"state": current_state(), "result": {"saved": True}},
         )
 
     @app.post("/connections/anthropic/save")

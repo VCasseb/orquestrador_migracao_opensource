@@ -10,10 +10,12 @@
       </div>
       <div class="text-xs text-slate-500 mt-1 flex gap-3 flex-wrap">
         {% if stage == "conversion" and entry.artifact %}
-          <span>method: <span class="text-slate-300">{{ entry.artifact.method }}</span></span>
-          <span>confidence: <span class="text-slate-300">{{ entry.artifact.confidence }}</span></span>
+          <span class="px-1.5 py-0.5 rounded {{ 'bg-emerald-950/40 text-emerald-300' if entry.kind == 'dag' else 'bg-amber-950/40 text-amber-300' }}">{{ 'DAG' if entry.kind == 'dag' else 'notebook' }}</span>
+          <span>→ <span class="text-slate-300">{{ entry.artifact.target_platform }}</span></span>
           {% if entry.artifact.llm_model_used %}<span>model: <span class="text-slate-300">{{ entry.artifact.llm_model_used }}</span></span>{% endif %}
-          {% if entry.artifact.notes %}<span class="text-amber-400">{{ entry.artifact.notes|length }} note(s)</span>{% endif %}
+          {% if entry.artifact.input_tokens is not none %}<span>tokens: <span class="text-slate-300">{{ (entry.artifact.input_tokens or 0) + (entry.artifact.output_tokens or 0) }}</span></span>{% endif %}
+          {% if entry.artifact.notes %}<span class="text-amber-400">{{ entry.artifact.notes|length }} nota(s)</span>{% endif %}
+          {% if entry.artifact.error %}<span class="text-rose-400">erro</span>{% endif %}
         {% elif stage == "validation" and entry.report %}
           {% set vc = {'pass': 'emerald', 'warn': 'amber', 'fail': 'rose'}[entry.report.verdict] %}
           <span>verdict: <span class="text-{{ vc }}-400 font-medium">{{ entry.report.verdict|upper }}</span></span>
@@ -27,7 +29,10 @@
     </div>
     <div class="flex gap-2 flex-shrink-0">
       {% if stage == "conversion" %}
-        <a href="/convert/review/{{ entry.fqn }}" class="px-3 py-1.5 text-xs rounded bg-ink-800 border border-ink-700 hover:bg-ink-700">Review diff</a>
+        <a href="/convert?kind={{ entry.kind }}&name={{ entry.fqn }}" class="px-3 py-1.5 text-xs rounded bg-ink-800 border border-ink-700 hover:bg-ink-700">Ver diff</a>
+        {% if entry.artifact and entry.artifact.output_path %}
+          <a href="/convert/download?file={{ entry.artifact.output_path }}" class="px-3 py-1.5 text-xs rounded bg-ink-800 border border-ink-700 hover:bg-ink-700">Baixar</a>
+        {% endif %}
       {% elif stage == "validation" %}
         <button hx-get="/validate/report/{{ entry.fqn|replace('.', '_') }}" hx-target="#bulk-result" hx-swap="innerHTML"
                 class="px-3 py-1.5 text-xs rounded bg-ink-800 border border-ink-700 hover:bg-ink-700">View</button>

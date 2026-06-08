@@ -30,9 +30,8 @@ def active_provider() -> str:
     return p if p in PROVIDERS else "anthropic"
 
 
-def complete(system: str, user: str, max_tokens: int = 4000) -> tuple[str, str]:
-    """Run a single completion against the active provider. Returns (text, model)."""
-    provider = active_provider()
+def _provider_module(provider: str | None = None):
+    provider = provider or active_provider()
     if provider == "anthropic":
         from migrate.core.llm import anthropic_provider as p
     elif provider == "openai":
@@ -43,7 +42,31 @@ def complete(system: str, user: str, max_tokens: int = 4000) -> tuple[str, str]:
         from migrate.core.llm import bedrock_provider as p
     else:
         raise RuntimeError(f"Unknown LLM_PROVIDER: {provider}")
-    return p.complete(system, user, max_tokens)
+    return p
+
+
+def complete(system: str, user: str, max_tokens: int = 4000) -> tuple[str, str]:
+    """Run a single completion against the active provider. Returns (text, model)."""
+    return _provider_module().complete(system, user, max_tokens)
+
+
+def complete_with_usage(system: str, user: str, max_tokens: int = 4000) -> tuple[str, str, dict | None]:
+    """Like complete(), but also returns token usage {input_tokens, output_tokens}
+    (or None if the provider/response didn't report it)."""
+    return _provider_module().complete_with_usage(system, user, max_tokens)
+
+
+def active_model(provider: str | None = None) -> str:
+    """The model id used for the given (or active) provider — read from env, no API
+    call. Lets us price/estimate without credentials."""
+    provider = provider or active_provider()
+    env_key, default = {
+        "anthropic": ("ANTHROPIC_MODEL", "claude-sonnet-4-6"),
+        "openai": ("OPENAI_MODEL", "gpt-4o-mini"),
+        "gemini": ("GEMINI_MODEL", "gemini-2.0-flash"),
+        "bedrock": ("BEDROCK_MODEL_ID", "anthropic.claude-sonnet-4-20250514-v1:0"),
+    }.get(provider, ("ANTHROPIC_MODEL", "claude-sonnet-4-6"))
+    return get_env(env_key, default) or default
 
 
 def test_connection(provider: str | None = None) -> tuple[bool, str, str]:

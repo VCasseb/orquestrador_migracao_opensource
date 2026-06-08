@@ -5,7 +5,7 @@ from migrate.core.credentials import get_env
 DEFAULT_MODEL = "claude-sonnet-4-6"
 
 
-def complete(system: str, user: str, max_tokens: int = 4000) -> tuple[str, str]:
+def complete_with_usage(system: str, user: str, max_tokens: int = 4000) -> tuple[str, str, dict | None]:
     api_key = get_env("ANTHROPIC_API_KEY")
     if not api_key:
         raise RuntimeError("ANTHROPIC_API_KEY not set")
@@ -18,6 +18,14 @@ def complete(system: str, user: str, max_tokens: int = 4000) -> tuple[str, str]:
         messages=[{"role": "user", "content": user}],
     )
     text = "".join(b.text for b in msg.content if b.type == "text").strip()
+    usage = None
+    if getattr(msg, "usage", None):
+        usage = {"input_tokens": msg.usage.input_tokens, "output_tokens": msg.usage.output_tokens}
+    return text, model, usage
+
+
+def complete(system: str, user: str, max_tokens: int = 4000) -> tuple[str, str]:
+    text, model, _ = complete_with_usage(system, user, max_tokens)
     return text, model
 
 

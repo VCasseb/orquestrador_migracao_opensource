@@ -6,7 +6,7 @@ from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
-from migrate.core.convert.runner import list_conversions, load_conversion
+from migrate.core.convert.code import list_code_conversions, load_code_conversion
 from migrate.core.inventory.catalog import load_inventory
 from migrate.core.state.approval import approve as approve_action
 from migrate.core.state.approval import get_state, reject as reject_action
@@ -14,16 +14,40 @@ from migrate.core.state.selection import load_selection
 from migrate.core.validate.report import list_reports, load_report
 
 
+def _kind_for(source_type: str) -> str:
+    return "dag" if source_type == "airflow_dag" else "notebook"
+
+
 def _conversions_with_state() -> list[dict[str, Any]]:
+    """Code conversions (DAGs / notebooks) awaiting review. Robust to unreadable
+    metas — a single bad file never takes down the page."""
     out = []
-    for path in list_conversions():
-        fqn = path.stem.replace("_", ".").replace(".meta", "")
-        art = load_conversion(fqn)
-        if not art:
+    for path in list_code_conversions():
+        try:
+            art = load_code_conversion(path)
+        except Exception:
             continue
+        fqn = art.name
         state = get_state(fqn, "conversion")
-        out.append({"fqn": fqn, "artifact": art, "state": state})
+        out.append({
+            "fqn": fqn,
+            "artifact": art,
+            "state": state,
+            "kind": _kind_for(art.source_type),
+            "meta": str(path),
+        })
     return out
+
+
+def _load_code_by_name(name: str):
+    for path in list_code_conversions():
+        try:
+            art = load_code_conversion(path)
+        except Exception:
+            continue
+        if art.name == name:
+            return art, str(path)
+    return None, None
 
 
 def _reports_with_state() -> list[dict[str, Any]]:
@@ -71,11 +95,7 @@ def attach(app: FastAPI, templates: Jinja2Templates) -> None:
                     continue
                 a = entry["artifact"]
                 eligible = filter == "all-pending" or (
-                    filter == "auto"
-                    and a.method in ("sqlglot", "ddl-only")
-                    and a.confidence == "high"
-                    and not a.notes
-                    and not a.error
+                    filter == "auto" and not a.notes and not a.error
                 )
                 if eligible:
                     approve_action(entry["fqn"], "conversion", f"bulk-approve ({filter})")
@@ -107,7 +127,11 @@ def attach(app: FastAPI, templates: Jinja2Templates) -> None:
     def _entry_for(fqn: str, stage: str) -> dict[str, Any]:
         state = get_state(fqn, stage)
         if stage == "conversion":
-            return {"fqn": fqn, "artifact": load_conversion(fqn), "state": state}
+            art, meta = _load_code_by_name(fqn)
+            return {
+                "fqn": fqn, "artifact": art, "state": state, "meta": meta,
+                "kind": _kind_for(art.source_type) if art else "notebook",
+            }
         if stage == "validation":
             from migrate.core.validate.report import load_report
             from pathlib import Path
