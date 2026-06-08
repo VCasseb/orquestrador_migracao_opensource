@@ -30,10 +30,10 @@ CONFIG_FILE = CONFIG_DIR / "config.yaml"
 def load_config(path: Path = CONFIG_FILE) -> MigrationConfig:
     if not path.exists():
         return MigrationConfig()
-    raw: dict[str, Any] = yaml.safe_load(path.read_text()) or {}
+    raw: dict[str, Any] = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     return MigrationConfig.model_validate(raw)
 
 
 def save_config(config: MigrationConfig, path: Path = CONFIG_FILE) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump(config.model_dump(), sort_keys=False))
+    path.write_text(yaml.safe_dump(config.model_dump(), sort_keys=False), encoding="utf-8")

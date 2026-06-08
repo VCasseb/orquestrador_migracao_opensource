@@ -42,7 +42,7 @@ def init() -> None:
     gitignore = Path(".gitignore")
     needed = [".env", ".migrate/credentials/", ".migrate/runs/", ".migrate/reports/"]
     if gitignore.exists():
-        existing = gitignore.read_text()
+        existing = gitignore.read_text(encoding="utf-8")
         missing = [line for line in needed if line not in existing]
         if missing:
             with gitignore.open("a") as f:
@@ -344,7 +344,7 @@ def docs(
         p = Path(".migrate/plans") / f"{plan}.yaml"
         plan_obj = load_plan(p)
         DOCS_DIR.mkdir(parents=True, exist_ok=True)
-        (DOCS_DIR / f"{plan}_index.md").write_text(render_plan_index(plan))
+        (DOCS_DIR / f"{plan}_index.md").write_text(render_plan_index(plan), encoding="utf-8")
         for fqn in plan_obj.selected:
             try:
                 save_doc(fqn)

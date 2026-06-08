@@ -39,7 +39,7 @@ def state_path(fqn: str) -> Path:
 def save_state(state: DeploymentState) -> Path:
     DEPLOYMENTS_DIR.mkdir(parents=True, exist_ok=True)
     p = state_path(state.fqn)
-    p.write_text(yaml.safe_dump(state.model_dump(mode="json"), sort_keys=False))
+    p.write_text(yaml.safe_dump(state.model_dump(mode="json"), sort_keys=False), encoding="utf-8")
     return p
 
 
@@ -47,7 +47,7 @@ def load_state(fqn: str) -> DeploymentState | None:
     p = state_path(fqn)
     if not p.exists():
         return None
-    return DeploymentState.model_validate(yaml.safe_load(p.read_text()))
+    return DeploymentState.model_validate(yaml.safe_load(p.read_text(encoding="utf-8")))
 
 
 def list_states() -> list[DeploymentState]:
@@ -58,7 +58,7 @@ def list_states() -> list[DeploymentState]:
         if p.name.endswith(".rolled-back.yaml"):
             continue
         try:
-            out.append(DeploymentState.model_validate(yaml.safe_load(p.read_text())))
+            out.append(DeploymentState.model_validate(yaml.safe_load(p.read_text(encoding="utf-8"))))
         except Exception:
             continue
     return out

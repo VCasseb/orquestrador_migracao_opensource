@@ -62,7 +62,7 @@ def _state_path(state: CodeDeploymentState) -> Path:
 def save_code_state(state: CodeDeploymentState) -> Path:
     CODE_DEPLOYMENTS_DIR.mkdir(parents=True, exist_ok=True)
     p = _state_path(state)
-    p.write_text(yaml.safe_dump(state.model_dump(mode="json"), sort_keys=False))
+    p.write_text(yaml.safe_dump(state.model_dump(mode="json"), sort_keys=False), encoding="utf-8")
     return p
 
 
@@ -71,7 +71,7 @@ def load_code_state(source_type: str, name: str) -> CodeDeploymentState | None:
     p = CODE_DEPLOYMENTS_DIR / f"code_{source_type}_{safe}.yaml"
     if not p.exists():
         return None
-    return CodeDeploymentState.model_validate(yaml.safe_load(p.read_text()))
+    return CodeDeploymentState.model_validate(yaml.safe_load(p.read_text(encoding="utf-8")))
 
 
 def list_code_deployments() -> list[CodeDeploymentState]:
@@ -80,7 +80,7 @@ def list_code_deployments() -> list[CodeDeploymentState]:
     out = []
     for p in sorted(CODE_DEPLOYMENTS_DIR.glob("code_*.yaml")):
         try:
-            out.append(CodeDeploymentState.model_validate(yaml.safe_load(p.read_text())))
+            out.append(CodeDeploymentState.model_validate(yaml.safe_load(p.read_text(encoding="utf-8"))))
         except Exception:
             continue
     return out

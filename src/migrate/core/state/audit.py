@@ -102,7 +102,7 @@ def read_log(fqn: str | None = None, limit: int | None = None) -> list[dict]:
     path = _per_fqn_log(fqn) if fqn else GLOBAL_LOG
     if not path.exists():
         return []
-    lines = path.read_text().splitlines()
+    lines = path.read_text(encoding="utf-8").splitlines()
     if limit:
         lines = lines[-limit:]
     return [json.loads(line) for line in lines if line.strip()]

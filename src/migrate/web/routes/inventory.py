@@ -68,7 +68,7 @@ def _ingest_materials(kind: str, materials: list[tuple[str, str]]) -> tuple[list
         target_dir = dag_dir if as_dag else nb_dir
         local_path = target_dir / filename
         try:
-            local_path.write_text(content)
+            local_path.write_text(content, encoding="utf-8")
         except Exception as e:
             errors.append(f"{filename}: falha ao gravar — {e}")
             continue

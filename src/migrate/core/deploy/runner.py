@@ -212,7 +212,7 @@ def _deploy_execute(state: DeploymentState, artifact, notebook_path: str, create
     if artifact.notebook_path:
         state.status = "uploading_notebook"
         save_state(state)
-        nb_text = Path(artifact.notebook_path).read_text()
+        nb_text = Path(artifact.notebook_path).read_text(encoding="utf-8")
         _step(state, f"upload notebook → {notebook_path}",
               lambda: upload_notebook(notebook_path, nb_text))
         state.notebook_workspace_path = notebook_path

@@ -270,7 +270,7 @@ def save_doc(fqn: str, content: str | None = None) -> Path:
     DOCS_DIR.mkdir(parents=True, exist_ok=True)
     body = content or render_table_doc(fqn)
     path = DOCS_DIR / f"{fqn.replace('.', '_')}.md"
-    path.write_text(body)
+    path.write_text(body, encoding="utf-8")
     return path
 
 

@@ -214,7 +214,7 @@ def attach(app: FastAPI, templates: Jinja2Templates) -> None:
         if not p.exists():
             return JSONResponse({"error": "not found"}, status_code=404)
         try:
-            p.write_text(content)
+            p.write_text(content, encoding="utf-8")
         except Exception as e:
             return JSONResponse({"error": f"write failed: {e}"}, status_code=500)
 
@@ -225,10 +225,10 @@ def attach(app: FastAPI, templates: Jinja2Templates) -> None:
             base = p.stem
             meta_path = p.parent / f"{base}.meta.yaml"
             if meta_path.exists():
-                meta = yaml.safe_load(meta_path.read_text()) or {}
+                meta = yaml.safe_load(meta_path.read_text(encoding="utf-8")) or {}
                 meta["converted_code"] = content
                 meta["output_sha"] = hash_payload(content)
-                meta_path.write_text(yaml.safe_dump(meta, sort_keys=False))
+                meta_path.write_text(yaml.safe_dump(meta, sort_keys=False), encoding="utf-8")
             log_action("convert_edit_saved", fqn=p.stem, payload={"file": str(p), "size": len(content)})
         except Exception:
             pass
@@ -316,7 +316,7 @@ def attach(app: FastAPI, templates: Jinja2Templates) -> None:
         if artifact.notebook_path:
             p = Path(artifact.notebook_path)
             if p.exists():
-                notebook_text = p.read_text()
+                notebook_text = p.read_text(encoding="utf-8")
         return templates.TemplateResponse(
             request,
             "_conversion_result.html",
@@ -353,7 +353,7 @@ def attach(app: FastAPI, templates: Jinja2Templates) -> None:
         p = Path(artifact.notebook_path)
         if not p.exists():
             return HTMLResponse("(missing on disk)", status_code=404)
-        return HTMLResponse(p.read_text(), media_type="text/plain")
+        return HTMLResponse(p.read_text(encoding="utf-8"), media_type="text/plain")
 
     @app.get("/convert/review/{fqn}")
     def convert_review(request: Request, fqn: str):

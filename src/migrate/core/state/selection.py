@@ -10,13 +10,13 @@ SELECTION_FILE = Path(".migrate/selection.yaml")
 def load_selection(path: Path = SELECTION_FILE) -> set[str]:
     if not path.exists():
         return set()
-    raw = yaml.safe_load(path.read_text()) or {}
+    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     return set(raw.get("selected", []))
 
 
 def save_selection(selected: set[str], path: Path = SELECTION_FILE) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump({"selected": sorted(selected)}, sort_keys=False))
+    path.write_text(yaml.safe_dump({"selected": sorted(selected)}, sort_keys=False), encoding="utf-8")
 
 
 def toggle(fqn: str, path: Path = SELECTION_FILE) -> bool:

@@ -275,12 +275,12 @@ def build_dag_plan(
 def save_plan(plan: MigrationPlan, dir: Path = PLANS_DIR) -> Path:
     dir.mkdir(parents=True, exist_ok=True)
     path = dir / f"{plan.name}.yaml"
-    path.write_text(yaml.safe_dump(plan.model_dump(mode="json"), sort_keys=False))
+    path.write_text(yaml.safe_dump(plan.model_dump(mode="json"), sort_keys=False), encoding="utf-8")
     return path
 
 
 def load_plan(path: Path) -> MigrationPlan:
-    return MigrationPlan.model_validate(yaml.safe_load(path.read_text()))
+    return MigrationPlan.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
 
 
 def list_plans(dir: Path = PLANS_DIR) -> list[Path]:

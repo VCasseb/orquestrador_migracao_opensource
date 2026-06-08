@@ -55,12 +55,12 @@ def save_report(report: ValidationReport, dir: Path = REPORTS_DIR) -> Path:
     dir.mkdir(parents=True, exist_ok=True)
     safe_name = report.fqn_source.replace(".", "_")
     path = dir / f"{safe_name}.yaml"
-    path.write_text(yaml.safe_dump(report.model_dump(mode="json"), sort_keys=False))
+    path.write_text(yaml.safe_dump(report.model_dump(mode="json"), sort_keys=False), encoding="utf-8")
     return path
 
 
 def load_report(path: Path) -> ValidationReport:
-    return ValidationReport.model_validate(yaml.safe_load(path.read_text()))
+    return ValidationReport.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
 
 
 def list_reports(dir: Path = REPORTS_DIR) -> list[Path]:

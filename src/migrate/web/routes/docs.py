@@ -49,7 +49,7 @@ def attach(app: FastAPI, templates: Jinja2Templates) -> None:
         path = DOCS_DIR / f"{name}.md"
         if not path.exists():
             return HTMLResponse("<div class='text-rose-400'>Doc not found.</div>", status_code=404)
-        content = path.read_text()
+        content = path.read_text(encoding="utf-8")
         fqn = name.replace("_", ".")
         return templates.TemplateResponse(
             request,
@@ -62,4 +62,4 @@ def attach(app: FastAPI, templates: Jinja2Templates) -> None:
         path = DOCS_DIR / f"{name}.md"
         if not path.exists():
             return PlainTextResponse("(not found)", status_code=404)
-        return PlainTextResponse(path.read_text())
+        return PlainTextResponse(path.read_text(encoding="utf-8"))

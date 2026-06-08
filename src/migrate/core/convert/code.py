@@ -192,7 +192,7 @@ def convert_code(req: CodeConversionRequest) -> CodeConversionArtifact:
         CONVERSIONS_DIR.mkdir(parents=True, exist_ok=True)
         out_path = CONVERSIONS_DIR / artifact_name
         if converted_code:
-            out_path.write_text(converted_code)
+            out_path.write_text(converted_code, encoding="utf-8")
 
         artifact = CodeConversionArtifact(
             name=req.name,
@@ -214,7 +214,7 @@ def convert_code(req: CodeConversionRequest) -> CodeConversionArtifact:
         )
 
         meta_path = CONVERSIONS_DIR / f"{Path(artifact_name).stem}.meta.yaml"
-        meta_path.write_text(yaml.safe_dump(artifact.model_dump(mode="json"), sort_keys=False))
+        meta_path.write_text(yaml.safe_dump(artifact.model_dump(mode="json"), sort_keys=False), encoding="utf-8")
 
         ctx.update({"output_path": str(out_path), "model": model})
         return artifact
@@ -289,4 +289,4 @@ def list_code_conversions() -> list[Path]:
 
 
 def load_code_conversion(meta_path: Path) -> CodeConversionArtifact:
-    return CodeConversionArtifact.model_validate(yaml.safe_load(meta_path.read_text()))
+    return CodeConversionArtifact.model_validate(yaml.safe_load(meta_path.read_text(encoding="utf-8")))

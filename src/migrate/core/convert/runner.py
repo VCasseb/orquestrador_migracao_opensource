@@ -36,15 +36,15 @@ def _save_artifacts(art: ConversionArtifact, table: TableMetadata, ddl: str, not
     base = table.fqn.replace(".", "_")
 
     if art.converted_sql:
-        (CONVERSIONS_DIR / f"{base}.sql").write_text(art.converted_sql)
-    (CONVERSIONS_DIR / f"{base}.ddl.sql").write_text(ddl)
+        (CONVERSIONS_DIR / f"{base}.sql").write_text(art.converted_sql, encoding="utf-8")
+    (CONVERSIONS_DIR / f"{base}.ddl.sql").write_text(ddl, encoding="utf-8")
     if notebook:
         nb_path = CONVERSIONS_DIR / f"{base}.notebook.py"
-        nb_path.write_text(notebook)
+        nb_path.write_text(notebook, encoding="utf-8")
         art.notebook_path = str(nb_path)
 
     (CONVERSIONS_DIR / f"{base}.meta.yaml").write_text(
-        yaml.safe_dump(art.model_dump(mode="json"), sort_keys=False)
+        yaml.safe_dump(art.model_dump(mode="json"), sort_keys=False), encoding="utf-8"
     )
     return art
 
@@ -155,4 +155,4 @@ def load_conversion(fqn: str) -> ConversionArtifact | None:
     path = CONVERSIONS_DIR / f"{base}.meta.yaml"
     if not path.exists():
         return None
-    return ConversionArtifact.model_validate(yaml.safe_load(path.read_text()))
+    return ConversionArtifact.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
