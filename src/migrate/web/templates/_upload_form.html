@@ -4,7 +4,7 @@
       hx-trigger="change from:find input[type=file]"
       hx-target="#{{ _rid }}" hx-swap="innerHTML"
       hx-indicator="#{{ _rid }}-spin"
-      {% if reload_to %}hx-on::after-request="if(event.detail.successful) window.location='{{ reload_to }}'"{% endif %}
+      {% if reload_to %}hx-on::after-request="if(event.detail.successful && event.detail.xhr.getResponseHeader('X-Upload-Errors')==='0') window.location='{{ reload_to }}'"{% endif %}
       class="flex items-center gap-2 text-xs flex-wrap">
   <i data-lucide="upload-cloud" class="w-4 h-4 text-accent-500 flex-shrink-0"></i>
   <span class="text-slate-300 font-medium mr-1">Subir arquivos</span>

@@ -22,6 +22,14 @@
   {% with result_id = 'upload-result', reload_to = '/inventory' %}
     {% include "_upload_form.html" %}
   {% endwith %}
+  <details class="mt-2 border-t border-ink-800 pt-2">
+    <summary class="cursor-pointer text-xs text-accent-500 hover:underline">ou colar o código manualmente</summary>
+    <div class="mt-2">
+      {% with paste_result_id = 'paste-result', reload_to = '/inventory' %}
+        {% include "_upload_paste_form.html" %}
+      {% endwith %}
+    </div>
+  </details>
 </div>
 
 {% set notebooks = inv.notebooks if inv else [] %}

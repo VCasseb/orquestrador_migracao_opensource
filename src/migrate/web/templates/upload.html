@@ -15,6 +15,14 @@
   {% with result_id = 'upload-result' %}
     {% include "_upload_form.html" %}
   {% endwith %}
+  <details class="mt-3 border-t border-ink-800 pt-3">
+    <summary class="cursor-pointer text-sm text-accent-500 hover:underline">ou colar o código manualmente</summary>
+    <div class="mt-3">
+      {% with paste_result_id = 'paste-result' %}
+        {% include "_upload_paste_form.html" %}
+      {% endwith %}
+    </div>
+  </details>
 </div>
 
 <!-- Lista de artefatos enviados — atualiza sozinha após cada upload -->

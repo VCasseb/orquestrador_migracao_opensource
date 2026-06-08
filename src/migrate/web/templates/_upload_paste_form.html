@@ -1,0 +1,17 @@
+{# Paste-code uploader. Optional vars: paste_result_id (default 'paste-result'), reload_to. #}
+{% set _rid = paste_result_id|default('paste-result') %}
+<form hx-post="/inventory/upload-paste" hx-target="#{{ _rid }}" hx-swap="innerHTML"
+      {% if reload_to %}hx-on::after-request="if(event.detail.successful && event.detail.xhr.getResponseHeader('X-Upload-Errors')==='0') window.location='{{ reload_to }}'"{% endif %}
+      class="space-y-2">
+  <div class="flex items-center gap-2">
+    <input name="name" required placeholder="nome (ex.: gold.cartoes  ou  meu_dag.py)"
+           class="flex-1 bg-ink-800 border border-ink-700 rounded px-3 py-1.5 text-sm focus:border-accent-500 focus:outline-none" />
+    <button type="submit" class="px-3 py-1.5 text-xs rounded bg-accent-600 hover:bg-accent-700 text-ink-950 font-medium flex-shrink-0">
+      Adicionar código
+    </button>
+  </div>
+  <textarea name="code" rows="8" required placeholder="cole o código do notebook/DAG aqui…"
+            class="w-full bg-ink-800 border border-ink-700 rounded px-3 py-2 text-xs font-mono text-slate-200 focus:border-accent-500 focus:outline-none"></textarea>
+  <p class="text-slate-500 text-[11px]">Sem extensão no nome = tratado como <code>.py</code>. O tipo (DAG ou notebook) é detectado automaticamente.</p>
+</form>
+<div id="{{ _rid }}" class="mt-2"></div>

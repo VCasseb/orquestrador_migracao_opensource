@@ -37,7 +37,88 @@ def _humanize_count(n: int | None) -> str:
     return str(n)
 
 
+def _ingest_materials(kind: str, materials: list[tuple[str, str]]) -> tuple[list[dict], list[dict], list[str]]:
+    """Classify, write and parse a list of (filename, content) into the inventory.
+    Shared by file upload and paste. Returns (added, replaced, errors) where
+    added/replaced are dicts {name, type, ext}. Saves the inventory at the end."""
+    inv = load_inventory() or Inventory(
+        scanned_at=datetime.now(timezone.utc), projects=[], tables=[],
+    )
+    nb_dir = Path(".migrate/uploads/notebooks")
+    dag_dir = Path(".migrate/uploads/dags")
+    nb_dir.mkdir(parents=True, exist_ok=True)
+    dag_dir.mkdir(parents=True, exist_ok=True)
+
+    added: list[dict] = []
+    replaced: list[dict] = []
+    errors: list[str] = []
+
+    for filename, content in materials:
+        low = filename.lower()
+        ext = low.rsplit(".", 1)[-1] if "." in low else ""
+
+        # Decide the type: explicit override, else auto-detect from content.
+        as_dag = kind == "dag"
+        if kind == "auto" and low.endswith(".py"):
+            try:
+                as_dag = parse_dag_file(filename, content) is not None
+            except Exception:
+                as_dag = False
+
+        target_dir = dag_dir if as_dag else nb_dir
+        local_path = target_dir / filename
+        try:
+            local_path.write_text(content)
+        except Exception as e:
+            errors.append(f"{filename}: falha ao gravar — {e}")
+            continue
+
+        try:
+            if as_dag:
+                dag = parse_dag_file(str(local_path), content)
+                if not dag:
+                    errors.append(f"{filename}: nenhum DAG() encontrado no código")
+                    continue
+                existing = next((i for i, x in enumerate(inv.dags) if x.name == dag.name), None)
+                entry = {"name": dag.name, "type": "dag", "ext": ext}
+                if existing is not None:
+                    inv.dags[existing] = dag
+                    replaced.append(entry)
+                else:
+                    inv.dags.append(dag)
+                    added.append(entry)
+            else:
+                nb = parse_notebook_file(filename, content, location=str(local_path))
+                existing = next((i for i, x in enumerate(inv.notebooks) if x.name == nb.name), None)
+                entry = {"name": nb.name, "type": "notebook", "ext": ext}
+                if existing is not None:
+                    inv.notebooks[existing] = nb
+                    replaced.append(entry)
+                else:
+                    inv.notebooks.append(nb)
+                    added.append(entry)
+        except Exception as e:
+            errors.append(f"{filename}: parse falhou — {e}")
+
+    save_inventory(inv)
+    return added, replaced, errors
+
+
 def attach(app: FastAPI, templates: Jinja2Templates) -> None:
+
+    def _upload_resp(request: Request, added: list, replaced: list, errors: list):
+        resp = templates.TemplateResponse(
+            request, "_upload_result.html",
+            {"added": added, "replaced": replaced, "errors": errors},
+        )
+        # Pages with a self-refreshing list listen for this.
+        if added or replaced:
+            resp.headers["HX-Trigger"] = "artifactsUploaded"
+        # Forms only auto-reload when this is "0" — otherwise the error banner
+        # would be wiped by the reload before the user can read it.
+        resp.headers["X-Upload-Errors"] = str(len(errors))
+        return resp
+
 
     @app.get("/inventory", response_class=HTMLResponse)
     def inventory_page(request: Request, kind: str = "notebook", layer: str = ""):
@@ -195,20 +276,7 @@ def attach(app: FastAPI, templates: Jinja2Templates) -> None:
         if kind not in ("notebook", "dag", "auto"):
             return HTMLResponse(f"<div class='text-rose-400 p-3'>Unsupported kind: {kind}</div>", status_code=400)
 
-        inv = load_inventory() or Inventory(
-            scanned_at=datetime.now(timezone.utc), projects=[], tables=[],
-        )
-
-        nb_dir = Path(".migrate/uploads/notebooks")
-        dag_dir = Path(".migrate/uploads/dags")
-        nb_dir.mkdir(parents=True, exist_ok=True)
-        dag_dir.mkdir(parents=True, exist_ok=True)
-
-        # added/replaced hold {"name", "type" ("dag"|"notebook"), "ext"} for display.
-        added: list[dict] = []
-        replaced: list[dict] = []
         errors: list[str] = []
-
         # Materialize uploads as a flat list of (filename, content) — handles zips inline
         materials: list[tuple[str, str]] = []
         for f in files:
@@ -217,7 +285,7 @@ def attach(app: FastAPI, templates: Jinja2Templates) -> None:
             try:
                 raw = await f.read()
             except Exception as e:
-                errors.append(f"{f.filename}: read failed — {e}")
+                errors.append(f"{f.filename}: leitura falhou — {e}")
                 continue
 
             if f.filename.lower().endswith(".zip"):
@@ -232,71 +300,39 @@ def attach(app: FastAPI, templates: Jinja2Templates) -> None:
                             try:
                                 materials.append((base, zf.read(entry).decode("utf-8", errors="replace")))
                             except Exception as e:
-                                errors.append(f"{entry} (in {f.filename}): {e}")
+                                errors.append(f"{entry} (em {f.filename}): {e}")
                 except Exception as e:
-                    errors.append(f"{f.filename}: invalid zip — {e}")
+                    errors.append(f"{f.filename}: zip inválido — {e}")
             else:
                 try:
                     materials.append((f.filename, raw.decode("utf-8", errors="replace")))
                 except Exception as e:
-                    errors.append(f"{f.filename}: decode failed — {e}")
+                    errors.append(f"{f.filename}: decode falhou — {e}")
 
-        for filename, content in materials:
-            low = filename.lower()
-            ext = low.rsplit(".", 1)[-1] if "." in low else ""
+        added, replaced, ingest_errors = _ingest_materials(kind, materials)
+        return _upload_resp(request, added, replaced, errors + ingest_errors)
 
-            # Decide the type: explicit override, else auto-detect.
-            as_dag = kind == "dag"
-            if kind == "auto" and low.endswith(".py"):
-                try:
-                    as_dag = parse_dag_file(filename, content) is not None
-                except Exception:
-                    as_dag = False
-
-            target_dir = dag_dir if as_dag else nb_dir
-            local_path = target_dir / filename
-            try:
-                local_path.write_text(content)
-            except Exception as e:
-                errors.append(f"{filename}: write failed — {e}")
-                continue
-
-            try:
-                if as_dag:
-                    dag = parse_dag_file(str(local_path), content)
-                    if not dag:
-                        errors.append(f"{filename}: nenhum DAG() encontrado no código")
-                        continue
-                    existing = next((i for i, x in enumerate(inv.dags) if x.name == dag.name), None)
-                    entry = {"name": dag.name, "type": "dag", "ext": ext}
-                    if existing is not None:
-                        inv.dags[existing] = dag
-                        replaced.append(entry)
-                    else:
-                        inv.dags.append(dag)
-                        added.append(entry)
-                else:
-                    nb = parse_notebook_file(filename, content, location=str(local_path))
-                    existing = next((i for i, x in enumerate(inv.notebooks) if x.name == nb.name), None)
-                    entry = {"name": nb.name, "type": "notebook", "ext": ext}
-                    if existing is not None:
-                        inv.notebooks[existing] = nb
-                        replaced.append(entry)
-                    else:
-                        inv.notebooks.append(nb)
-                        added.append(entry)
-            except Exception as e:
-                errors.append(f"{filename}: parse falhou — {e}")
-
-        save_inventory(inv)
-        resp = templates.TemplateResponse(
-            request, "_upload_result.html",
-            {"added": added, "replaced": replaced, "errors": errors},
-        )
-        # Let pages with a self-refreshing artifact list update without a full reload.
-        if added or replaced:
-            resp.headers["HX-Trigger"] = "artifactsUploaded"
-        return resp
+    @app.post("/inventory/upload-paste")
+    def inventory_upload_paste(
+        request: Request,
+        name: str = Form(...),
+        code: str = Form(...),
+        kind: str = Form("auto"),
+    ):
+        """Add a notebook/DAG by pasting code + a name (no file needed). The name's
+        extension drives parsing (defaults to .py). Type is auto-detected."""
+        if kind not in ("notebook", "dag", "auto"):
+            return HTMLResponse(f"<div class='text-rose-400 p-3'>Unsupported kind: {kind}</div>", status_code=400)
+        name = (name or "").strip().replace("/", "_").replace("\\", "_")
+        if not name:
+            return _upload_resp(request, [], [], ["Informe um nome para o código."])
+        if not code.strip():
+            return _upload_resp(request, [], [], [f"{name}: nenhum código colado."])
+        # Default to .py when no extension was given.
+        if "." not in name:
+            name = name + ".py"
+        added, replaced, errors = _ingest_materials(kind, [(name, code)])
+        return _upload_resp(request, added, replaced, errors)
 
     @app.get("/upload", response_class=HTMLResponse)
     def upload_page(request: Request):
